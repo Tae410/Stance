@@ -1285,7 +1285,12 @@ local function resolveStance(now)
     --    WeaponUpgrade and ArmorUpgrade mods themselves match on the
     --    current record id. If GRIP somehow converted the hammer, the
     --    upgrade mods wouldn't fire either, so we follow their logic.
-    if effRec and isReforgerWeapon(right, effRec) then
+    --
+    --    Explicitly excluded when Felthorn is in the off-hand: without this
+    --    guard the hammer in the right hand wins at priority 4 and the
+    --    Blademeister check at priority 5 is never reached, leaving Reforger
+    --    active for the entire dual-wield session.
+    if effRec and isReforgerWeapon(right, effRec) and not isFelthornInOffhand() then
         local r = pick('reforger', 'reforger weapon equipped')
         if r then return r end
     end
