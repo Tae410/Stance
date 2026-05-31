@@ -1,188 +1,86 @@
 # Stance!
 
-A weapon-style progression mod for OpenMW. Every weapon you carry, every tool you use, every posture you hold is a stance — and every stance has its own level, its own perk ladder, and its own governing attribute. The more you fight with a short blade, the better you get at fighting with a short blade, independent of everything else.
+**A weapon-style progression mod for OpenMW.** In vanilla Morrowind your combat skills are tied to abstract categories — Long Blade, Marksman, Block. Stance! reframes that around what you're *actually doing in the moment*. Whatever you have in your hands, whatever posture you're holding, is a **stance**: drawing a longsword makes you a *Soloist*, raising a shield makes you a *Fortifier*, holstering everything and haggling with a merchant makes you a *Commoner*. Each stance levels on its own, has its own four-rung perk ladder, and quietly boosts the skill it's built around.
 
-Requires **OpenMW 0.49+** and **Skill Framework**.
+The result is that your character grows in the directions you play. Fight with short blades and you get better at fighting with short blades — separately from, and on top of, your vanilla skill progression.
 
----
-
-## How It Works
-
-Stance! registers a single skill entry in Skill Framework called **Stance**. That entry is a live window — it changes its name, its governing attribute, and its tooltip to reflect whatever stance you are currently holding. When you pick up a long blade, it becomes *Soloist*. When you holster your weapon and open a merchant window, it becomes *Commoner*. When you equip your repair hammer, it becomes *Reforger*.
-
-There are **19 stances** in total. Each one has:
-
-- Its own independent level and XP bank (5 to 100), stored per character and never lost when you switch.
-- A **skill bonus** that increases additively as the stance levels — applied as a live modifier directly to the underlying weapon or tool skill. A Soloist at level 52 gives you roughly +11 Long Blade. At level 100, +20.
-- A **perk ladder** of four perks, unlocked at core Stance skill levels 25, 50, 75, and 100.
-
-The **core Stance skill** is separate. It levels at half the rate of any active stance, and it is the sole gatekeeper for perks — reach core level 25 and every stance's first perk becomes available at once, regardless of which stances you have or haven't used. The perks themselves only fire while the stance that owns them is active.
+> **Requires OpenMW 0.49+ and the Skill Framework mod.** Everything else is optional.
 
 ---
 
-## Stances
+## The Big Idea
 
-Detection runs top-to-bottom. The first match wins. Stances earlier in the list take priority over stances below them.
+Stance! adds **one** new skill to your character sheet — called **Stance** — through Skill Framework. But that single entry is a chameleon: its name, its governing attribute, and its tooltip all change in real time to match whatever stance you're currently holding. Pick up a bow and the skill reads *Huntsman* (governed by Speed); equip a mace and it becomes *Mjolnir* (Strength).
 
-| Priority | Stance | Triggers when... | Attribute | Skill Bonus |
+Behind that one visible entry, the mod tracks **19 separate stances**, each with:
+
+- **Its own level and XP**, from 5 to 100, saved per character. Switching stances never costs you progress — your Soloist level sits untouched while you spend an afternoon as a Thief.
+- **A live skill bonus** that grows with the stance's level and is applied directly to the underlying weapon/tool skill. A level-52 Soloist is wielding Long Blade at roughly +11; a maxed one at +20. Leave the stance and the bonus instantly drops to zero.
+- **A perk ladder** of four perks that unlock as your *core* Stance skill rises.
+
+### Two levels working together
+
+There's a distinction worth understanding:
+
+- **Each stance's own level** drives its skill bonus and earns from use.
+- **The core Stance skill** is a single shared level that rises at half the rate of whatever stance you're actively using. It's the gatekeeper for *perks* — when your core skill hits 25, the first perk of **every** stance unlocks at once, whether you've ever used that stance or not. Core 50, 75, and 100 open the higher tiers.
+
+Perks only take effect while their owning stance is the active one, so unlocking them all at core 25 doesn't flood you with effects — it just means each stance is ready to reward you the moment you adopt it.
+
+---
+
+## How a Stance Gets Chosen
+
+Every game tick, Stance! looks at your equipment and posture and runs down a fixed priority list. The **first match wins**. That ordering is what lets specific cases beat general ones — a Miner's Pick is recognized as *Pitmen* before the generic "it's an axe" *Axeman* rule can claim it.
+
+| # | Stance | Active when… | Attribute | Skill it boosts |
 |---|---|---|---|---|
-| 1 | **Locksmith** | A lockpick or probe is in your inventory | Agility | Security |
-| 2 | **Commoner** | Weapons sheathed, no tools — or final fallback | Luck | Speechcraft |
-| 3 | **Arcanist** | Spellcasting stance is active | Intelligence | — |
-| 4 | **Reforger** | The armorer's repair hammer is in your right hand | Endurance | Armorer |
-| 5 | **Blademeister** | Any Felthorn weapon (sd_ prefix) is equipped | Agility | varies by form |
-| 6 | **Angler** | A fishing pole is in your right hand | Luck | Fishing |
-| 7 | **Huntsman** | A bow or crossbow is equipped | Speed | Marksman |
-| 8 | **Twirler** | A thrown weapon is equipped | Agility | Throwing / Marksman |
-| 9 | **Thaumaturge** | A stave (BluntTwoWide) is equipped | Willpower | Staves / Blunt Weapon |
-| 10 | **Dualist** | Off-hand weapon is mounted (Dual Wielding) | Speed | varies by weapon |
-| 11 | **Fortifier** | A shield is equipped | Strength | Block |
-| 12 | **Guisarmier** | A spear is equipped | Endurance | Spear |
-| 13 | **Pitmen** | The Miner's Pick specifically is equipped | Endurance | Mining / Axe |
-| 14 | **Axeman** | Any axe (one- or two-handed) is equipped | Strength | Axe |
-| 15 | **Mjolnir** | A mace, club, warhammer, or maul is equipped | Strength | Blunt Weapon |
-| 16 | **Zweihänder** | A two-handed long blade is equipped | Strength | Long Blade |
-| 17 | **Soloist** | A one-handed long blade is equipped, no shield | Endurance | Long Blade |
-| 18 | **Thief** | A short blade is equipped | Speed | Short Blade |
-| 19 | **Brawler** | Right hand is empty, weapon stance is raised | Strength | Hand to Hand |
+| 1 | **Locksmith** | a lockpick or probe is readied in your right hand | Agility | Security |
+| 2 | **Commoner** | weapons sheathed and no tool out — also the final fallback | Luck | Speechcraft |
+| 3 | **Arcanist** | spellcasting stance is up | Intelligence | — |
+| 4 | **Reforger** | the armorer's repair hammer is in hand | Endurance | Armorer |
+| 5 | **Blademeister** | a Felthorn weapon (record id `sd_…`) is equipped | Agility | varies by form |
+| 6 | **Angler** | a fishing pole is in hand | Luck | Fishing |
+| 7 | **Huntsman** | a bow or crossbow is equipped | Speed | Marksman |
+| 8 | **Twirler** | a thrown weapon is equipped | Agility | Throwing |
+| 9 | **Thaumaturge** | a stave is equipped | Willpower | Staves / Blunt Weapon |
+| 10 | **Dualist** | an off-hand weapon is mounted (Dual Wielding) | Speed | varies by weapon |
+| 11 | **Fortifier** | a shield is equipped | Strength | Block |
+| 12 | **Guisarmier** | a spear is equipped | Endurance | Spear |
+| 13 | **Pitmen** | the Miner's Pick specifically is equipped | Endurance | Mining / Axe |
+| 14 | **Axeman** | any axe (one- or two-handed) is equipped | Strength | Axe |
+| 15 | **Mjolnir** | a mace, club, warhammer, or maul is equipped | Strength | Blunt Weapon |
+| 16 | **Zweihänder** | a two-handed long blade is equipped | Strength | Long Blade |
+| 17 | **Soloist** | a one-handed long blade, no shield | Endurance | Long Blade |
+| 18 | **Thief** | a short blade is equipped | Speed | Short Blade |
+| 19 | **Brawler** | weapon stance raised with an empty right hand | Strength | Hand to Hand |
 
-For modded skills (Throwing, Staves, Fishing, Mining): the bonus routes to the modded skill when its parent mod is detected, and falls back to the vanilla equivalent when it is not.
-
-For dynamic stances (Dualist, Blademeister): the bonus skill is resolved at runtime from the currently equipped weapon type, so it always goes to the right place.
+For stances tied to other mods' skills (Twirler → Throwing, Thaumaturge → Staves, Angler → Fishing, Pitmen → Mining), the bonus is routed to that mod's skill when it's installed, and falls back to the closest vanilla skill otherwise. For stances whose weapon can vary (Dualist, Blademeister), the target skill is resolved from whatever is actually in hand at that moment.
 
 ---
 
-## Skill Bonus
+## The Skill Bonus
 
-Each stance's own level determines an additive bonus applied to its target skill via a Skill Framework dynamic modifier. The ramp is linear from stance level 5 to level 100:
+A stance's own level sets an additive bonus on its target skill. The ramp is linear from level 5 to level 100:
 
-- **Level 5** → +2 points
-- **Level 52** → approximately +11 points
-- **Level 100** → +20 points
+| Stance level | Bonus |
+|---|---|
+| 5 | +2 |
+| ~52 | ~+11 |
+| 100 | +20 |
 
-The bonus is live — it updates as your stance level changes and drops to zero the moment you leave the stance.
+This bonus is applied as a live modifier and updated continuously, so it tracks your stance level and vanishes the instant you switch away. For vanilla skills the bonus is written straight to the engine's native skill modifier; for modded Skill Framework skills it's delivered through Skill Framework's own dynamic-modifier system. Either way it stacks cleanly alongside Fortify/Drain effects and other mods, because Stance! only ever adjusts its own contribution.
 
 ---
 
 ## Perks
 
-Perks are gated on the **core Stance skill level**, not the individual stance level. Reach core level 25 and every stance's first perk is available. Reach 50, 75, and 100 and the remaining tiers open up.
+There are four perks per stance — 76 in total — each unlocking at core Stance skill **25 / 50 / 75 / 100** and active only while that stance is the current one.
 
-All perk effects are active only while the stance that owns them is the current stance.
+<details>
+<summary><strong>Combat stances</strong></summary>
 
-### Arcanist
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Focused Chant | Spell costs reduced by five percent |
-| 50 | Meditated Mind | Passive magicka regeneration (Meditation Skill) improved by a quarter |
-| 75 | Incanted Focus | Custom-spell magicka refunds (Incantation) improved by ten percent |
-| 100 | Aethereal Mind | Spell failure chance halved |
-
-### Reforger
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Anvil Arms | Fatigue from hammer swings reduced by fifteen percent |
-| 50 | Weak-Point Strike | Hammer hits ignore ten percent of the target's armor |
-| 75 | Sundering Blow | One in ten hits damages the target's worn armor condition |
-| 100 | Forgemaster's Touch | Hammer damage +25%; power attacks have improved stagger chance |
-
-### Blademeister
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Soul Perception | +5 effective Sneak and +5 effective Mysticism while Felthorn is in hand |
-| 50 | Soul Wavelength | +15% weapon damage; hits carry a chance to disrupt the target |
-| 75 | Witch Hunter | Power attacks deal +30% damage and have a 15% chance to strike twice |
-| 100 | Soul Resonance | +25% damage, +10% attack speed, ignores 10% of target armor |
-
-### Huntsman
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Steady Aim | Ranged attack fatigue drain reduced by fifteen percent |
-| 50 | Pinning Shot | Ranged hits briefly slow the target |
-| 75 | Concussive Shot | Bullseye headshots drain 25 fatigue from the target |
-| 100 | Killshot | Ranged headshots deal twenty-five percent more damage |
-
-### Twirler
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Edged Spin | Throwing! critical chance +3% |
-| 50 | Twinned Throw | Throwing! twin-flight chance +5% |
-| 75 | Rending Hand | Throwing! bleed magnitude increased |
-| 100 | Whirlwind Arm | Throwing! paralyze duration +1 second |
-
-### Thaumaturge
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Concussive Accord | Staves! concussive strike chance +10% |
-| 50 | Siphoned Accord | Staves! arcane siphon chance +5% |
-| 75 | Resonant Accord | Staves! resonant conduit chance +3% |
-| 100 | Pulsed Accord | Staves! null pulse silence duration +2 seconds |
-
-### Dualist
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Light Footwork | +10% movement speed while dual-wielding |
-| 50 | Mirror Edge | Off-hand strikes deal +15% damage |
-| 75 | Twin Tempo | +15% attack speed while dual-wielding |
-| 100 | Cross Guard | You parry and block as though a shield were held |
-
-### Fortifier
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Shield Up | Block effectiveness +10% |
-| 50 | Warden Stance | N'Garde parry window widened by a quarter |
-| 75 | Perfect Guard | N'Garde perfect-parry rebound +20% |
-| 100 | Bulwark | Once per 30 seconds, one incoming blow is fully blocked |
-
-### Zweihänder
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Two-Hand Grip | Two-handed weapon damage +10% |
-| 50 | Sweeping Arc | Attacks have a chance to also hit a second nearby enemy |
-| 75 | Cleaving Blow | 10% chance to bypass a portion of the target's armor |
-| 100 | Titan Grip | +25% two-handed damage; heavy weapon fatigue drain halved |
-
-### Guisarmier
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Reach Advantage | Spear damage +10% |
-| 50 | Phalanx Brace | Knockdown resistance +25% |
-| 75 | Pinning Thrust | Spear hits have a chance to briefly slow the target |
-| 100 | Polearm Master | Spear damage +25%; spear attack fatigue drain -20% |
-
-### Pitmen
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Rough-Hewn | Miner's Pick damage in combat +10% |
-| 50 | Vein Reader | Mining duration with the pick reduced by 20% |
-| 75 | Prospector | Ore yield chance +15% |
-| 100 | Pit Boss | Pick damage +25%; mining completes 30% faster |
-
-### Angler
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Steady Grip | Fatigue from fishing pole attacks -15% |
-| 50 | Catch and Release | Successful casts have a 10% chance to yield a bonus fish |
-| 75 | Trophy Cast | Fishing skill treated as 10 points higher for catch quality |
-| 100 | Master Angler | Pole damage +25%; cast time reduced by 20% |
-
-### Axeman
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Cleaving Edge | Axe damage +10% |
-| 50 | Heavy Chop | Axe power attacks +20% damage |
-| 75 | Bleeding Cut | Axe hits cause a bleed — 1 health per second for 5 seconds |
-| 100 | Headsman | Axe damage +25%; 10% chance to bypass a portion of armor |
-
-### Mjolnir
-| Core | Perk | Effect |
-|---|---|---|
-| 25 | Iron Heft | Blunt weapon damage +10% |
-| 50 | Crushing Blow | Blunt power attacks +20% damage |
-| 75 | Concussive Force | 10% chance to stagger the target |
-| 100 | Thunderstrike | Blunt damage +25%; 10% chance to bypass a portion of armor |
-
-### Soloist
+### Soloist (one-handed long blade)
 | Core | Perk | Effect |
 |---|---|---|
 | 25 | Planted Feet | Knockdown resistance +25% |
@@ -190,192 +88,291 @@ All perk effects are active only while the stance that owns them is the current 
 | 75 | Unstoppable | 10% chance to stagger the target |
 | 100 | Solitary Will | Effective Endurance +15 |
 
-### Thief
+### Zweihänder (two-handed long blade)
 | Core | Perk | Effect |
 |---|---|---|
-| 25 | Quick Strike | Attack speed +10% with short blades |
+| 25 | Two-Hand Grip | Two-handed damage +10% |
+| 50 | Sweeping Arc | Chance to also hit a second nearby enemy |
+| 75 | Cleaving Blow | 10% chance to bypass part of the target's armor |
+| 100 | Titan Grip | +25% two-handed damage; heavy-weapon fatigue drain halved |
+
+### Thief (short blade)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Quick Strike | +10% attack speed with short blades |
 | 50 | Cutpurse | Effective Sneak +5 |
 | 75 | Backstab | Hits from behind deal +25% damage |
-| 100 | Master Thief | Short blade damage +25%; movement speed +10% |
+| 100 | Master Thief | +25% short-blade damage; +10% movement speed |
 
-### Locksmith
+### Axeman (axes)
 | Core | Perk | Effect |
 |---|---|---|
-| 25 | Light Fingers | Effective Security +5 |
-| 50 | Probe Sage | Probes are 10% less likely to break |
-| 75 | Sneak Step | Effective Sneak +5 |
-| 100 | Master of Locks | Lock difficulty treated as 15 points lower |
+| 25 | Cleaving Edge | Axe damage +10% |
+| 50 | Heavy Chop | Axe power attacks +20% damage |
+| 75 | Bleeding Cut | Hits cause a bleed (1 HP/sec for 5 sec) |
+| 100 | Headsman | +25% axe damage; 10% armor bypass chance |
 
-### Brawler
+### Mjolnir (blunt weapons)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Iron Heft | Blunt damage +10% |
+| 50 | Crushing Blow | Blunt power attacks +20% damage |
+| 75 | Concussive Force | 10% stagger chance |
+| 100 | Thunderstrike | +25% blunt damage; 10% armor bypass chance |
+
+### Guisarmier (spears)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Reach Advantage | Spear damage +10% |
+| 50 | Phalanx Brace | Knockdown resistance +25% |
+| 75 | Pinning Thrust | Chance to briefly slow the target |
+| 100 | Polearm Master | +25% spear damage; −20% spear fatigue drain |
+
+### Huntsman (bows & crossbows)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Steady Aim | Ranged fatigue drain −15% |
+| 50 | Pinning Shot | Ranged hits briefly slow the target |
+| 75 | Concussive Shot | Headshots drain 25 fatigue from the target |
+| 100 | Killshot | Headshots deal +25% damage |
+
+### Fortifier (shields)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Shield Up | Block effectiveness +10% |
+| 50 | Warden Stance | Widens N'Garde's parry window |
+| 75 | Perfect Guard | Boosts N'Garde's perfect-parry rebound |
+| 100 | Bulwark | Once per 30 sec, fully blocks one incoming blow |
+
+### Brawler (unarmed)
 | Core | Perk | Effect |
 |---|---|---|
 | 25 | Iron Grip | Hand-to-hand damage +15% |
-| 50 | Close-Range Fighter | Unarmed attack fatigue drain -25% |
-| 75 | Concussive Jab | Improved chance for unarmed hits to knock the target down |
-| 100 | Street Master | Successful unarmed hits briefly restore fatigue |
+| 50 | Close-Range Fighter | Unarmed fatigue drain −25% |
+| 75 | Concussive Jab | Improved unarmed knockdown chance |
+| 100 | Street Master | Unarmed hits briefly restore fatigue |
 
-### Commoner
+### Dualist (dual wielding)
 | Core | Perk | Effect |
 |---|---|---|
-| 25 | Merchant's Eye | Mercantile checks gain a Luck-based bonus |
+| 25 | Light Footwork | +10% movement speed while dual-wielding |
+| 50 | Mirror Edge | Off-hand strikes +15% damage |
+| 75 | Twin Tempo | +15% attack speed while dual-wielding |
+| 100 | Cross Guard | Parry and block as if a shield were held |
+
+</details>
+
+<details>
+<summary><strong>Magic, tool & modded-skill stances</strong></summary>
+
+### Arcanist (spellcasting)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Focused Chant | Spell costs −5% |
+| 50 | Meditated Mind | +25% passive magicka regen (Meditation Skill) |
+| 75 | Incanted Focus | +10% custom-spell magicka refunds (Incantation) |
+| 100 | Aethereal Mind | Spell failure chance halved |
+
+### Blademeister (Felthorn weapons)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Soul Perception | +5 effective Sneak and Mysticism while in hand |
+| 50 | Soul Wavelength | +15% weapon damage; chance to disrupt the target |
+| 75 | Witch Hunter | Power attacks +30% damage, 15% chance to strike twice |
+| 100 | Soul Resonance | +25% damage, +10% attack speed, 10% armor bypass |
+
+### Twirler (thrown weapons — needs Throwing!)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Edged Spin | Throwing! critical chance +3% |
+| 50 | Twinned Throw | Throwing! twin-flight chance +5% |
+| 75 | Rending Hand | Throwing! bleed magnitude increased |
+| 100 | Whirlwind Arm | Throwing! paralyze duration +1 sec |
+
+### Thaumaturge (staves — best with Staves!)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Concussive Accord | Staves! concussive-strike chance +10% |
+| 50 | Siphoned Accord | Staves! arcane-siphon chance +5% |
+| 75 | Resonant Accord | Staves! resonant-conduit chance +3% |
+| 100 | Pulsed Accord | Staves! null-pulse silence +2 sec |
+
+### Reforger (repair hammer)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Anvil Arms | Hammer-swing fatigue −15% |
+| 50 | Weak-Point Strike | Hammer hits ignore 10% of armor |
+| 75 | Sundering Blow | 1-in-10 hits damages worn armor condition |
+| 100 | Forgemaster's Touch | +25% hammer damage; better power-attack stagger |
+
+### Pitmen (Miner's Pick — best with Simply Mining)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Rough-Hewn | +10% pick damage in combat |
+| 50 | Vein Reader | −20% mining duration |
+| 75 | Prospector | +15% ore yield chance |
+| 100 | Pit Boss | +25% pick damage; mining 30% faster |
+
+### Angler (fishing pole — best with Fishing)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Steady Grip | Fishing-pole attack fatigue −15% |
+| 50 | Catch and Release | 10% chance of a bonus fish per cast |
+| 75 | Trophy Cast | Fishing treated as +10 for catch quality |
+| 100 | Master Angler | +25% pole damage; cast time −20% |
+
+### Locksmith (lockpick / probe)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Light Fingers | Effective Security +5 |
+| 50 | Probe Sage | Probes 10% less likely to break |
+| 75 | Sneak Step | Effective Sneak +5 |
+| 100 | Master of Locks | Lock difficulty treated as 15 lower |
+
+### Commoner (unarmed, social fallback)
+| Core | Perk | Effect |
+|---|---|---|
+| 25 | Merchant's Eye | Luck-based bonus to Mercantile checks |
 | 50 | Silver Tongue | Speechcraft effectiveness +10% |
-| 75 | Urban Charm | Disposition gains from successful Admire improved |
+| 75 | Urban Charm | Better disposition gains from Admire |
 | 100 | The People's Hero | Better barter prices; faster disposition recovery |
+
+</details>
 
 ---
 
-## XP Sources
+## Earning XP
 
-Only the **active stance** earns XP. The core Stance skill earns half that amount simultaneously, passively.
+Only the **active stance** earns XP, and the **core skill** earns half of that amount at the same time. Every source can be toggled on or off individually.
 
 | Source | XP | Notes |
 |---|---|---|
-| Landing a hit | 1.0 | Any weapon or fist |
-| Killing an enemy | 2.0 | Forwarded by the global script |
-| Casting a spell | 0.8 | Arcanist only |
-| Blocking successfully | 1.2 | Fortifier benefits most |
-| Time in stance | 0.1 | Per 10 seconds |
+| Landing a hit | 1.0 | any weapon or fist |
+| Killing an enemy | 2.0 | credited to the killer specifically |
+| Casting a spell | 0.8 | Arcanist |
+| Blocking successfully | 1.2 | Fortifier |
+| Holding a stance | 0.1 | per 10 seconds |
 | Meditation tick | 0.4 | Arcanist + Meditation Skill |
-| Merchant transaction | 1.5 | Commoner benefits most |
-| Successful upgrade | 4.0 | Reforger + WeaponUpgrade / ArmorUpgrade |
-| Failed upgrade | 0.5 | A lesson learned |
-| Successful ore mine | 3.0 | Pitmen + Simply Mining |
-| Successful fish catch | 3.0 | Angler + Fishing |
+| Merchant transaction | 1.5 | Commoner |
+| Successful repair/upgrade | 4.0 | Reforger + WeaponUpgrade/ArmorUpgrade |
+| Failed upgrade | 0.5 | a lesson learned |
+| Mining ore | 3.0 | Pitmen + Simply Mining |
+| Catching a fish | 3.0 | Angler + Fishing |
 
-A global **XP multiplier** (0–500%) scales all sources uniformly. It is in the Progression settings group and defaults to 100%.
+A single **XP multiplier** (0–500%, default 100%) scales every source at once.
 
----
+### Leveling curve
 
-## Progression
+Levels cost more as you climb: **8 XP** at level 5, **+6%** per level after, capped at **400 XP** per level. Early levels fly by — a skirmish can carry a fresh stance from 5 to 10 — while the final push from 90 to 100 takes real, sustained use.
 
-The XP required to level up follows a compound curve:
-
-- **Base cost** at level 5: 8 XP
-- Each subsequent level costs **6% more** than the last
-- **Hard cap** at 400 XP per level
-
-This means early levels come quickly — a short skirmish can push a fresh stance from 5 to 10 — while the final stretch from 90 to 100 requires sustained, deliberate use.
-
-**Race bonuses** give +5 to the Stance skill at character creation for all supported races, including vanilla races and several Tamriel Rebuilt additions (Naga, Ynesai, Reachman, Sea Elf). Can be disabled.
-
-**Class specialization bonus** gives a flat +10 to the Stance skill for characters whose class specializes in Combat. Can be disabled.
+**Starting bonuses** (both optional): +5 to the Stance skill at character creation for supported races (vanilla plus several Tamriel Rebuilt additions), and +10 for characters whose class specializes in Combat.
 
 ---
 
-## Integrations
+## Optional Integrations
 
-All integrations are optional. Each one can be individually disabled from the Integrations settings group. Stance! detects these mods at runtime and degrades gracefully when they are absent — it never requires them.
+Stance! detects supported mods at runtime and works fine without any of them — missing integrations simply leave the relevant perks or XP sources inert. Each can also be toggled off manually.
 
-| Mod | What it adds |
+| Mod | What it unlocks |
 |---|---|
-| **Skill Framework** | Required. Hosts the Stance skill entry and provides the dynamic modifier API for skill bonuses. |
-| **Throwing!** | Enables the Twirler stance and routes the skill bonus to the Throwing skill. Twirler perks amplify Throwing!'s own critical, twin-flight, bleed, and paralyze systems. |
-| **Staves!** | Enables the Thaumaturge stance and routes the skill bonus to the Staves skill. Thaumaturge perks amplify Staves!'s concussive strike, arcane siphon, resonant conduit, and null pulse. |
-| **Bullseye** | Enables Huntsman perks that interact with headshots. Huntsman still works without it; the headshot perks simply do nothing. |
-| **N'Garde** | Enables Fortifier perks that widen the parry window and amplify perfect-parry rebound. Fortifier still works and gives its block bonus without N'Garde. |
-| **Dual Wielding** | Enables the Dualist stance. Stance! listens for the mod's equip/remove events and reads the off-hand weapon type to route the skill bonus correctly. |
-| **Gothic Style Knockout** | Enables the Brawler's Concussive Jab perk, which improves the mod's non-lethal knockdown chance. |
-| **WeaponUpgrade / ArmorUpgrade** | Enables Reforger XP on successful and failed upgrade attempts. |
-| **GRIP** | Detected via its GRIPRecords global storage section. Tells the resolver not to rely on weapon type for stance detection, since GRIP can change the effective weapon in hand. |
-| **Blademeister** | Enables the Blademeister stance by detecting weapons with the `sd_` record prefix (all 180+ Felthorn forms). |
-| **Simply Mining** | Enables Pitmen XP on ore mines and gates the Vein Reader, Prospector, and Pit Boss perks. |
-| **Fishing** | Enables Angler XP on fish catches and gates the Catch and Release, Trophy Cast, and Master Angler perks. |
-| **Incantation** | Enables the Arcanist's Incanted Focus perk. |
-| **Meditation Skill** | Enables the Arcanist's Meditated Mind perk. |
-| **Toxicology!** | Detected as a sibling mod. Stance! reads its runtime storage section for coordination; no Stance! perks depend on it directly. |
+| **Skill Framework** | *Required.* Hosts the Stance skill entry and the modded-skill bonus path. |
+| **Throwing!** | The Twirler stance; routes its bonus to the Throwing skill and powers the Twirler perks. |
+| **Staves!** | The Thaumaturge stance; routes its bonus to Staves and powers the Thaumaturge perks. |
+| **Dual Wielding** | The Dualist stance; reads the off-hand weapon to target the right skill. |
+| **Blademeister** | The Blademeister stance, detected via the `sd_` weapon-record prefix. |
+| **GRIP** | Keeps stance detection correct when GRIP converts a weapon's effective type in hand. |
+| **Bullseye** | Huntsman's headshot perks. |
+| **N'Garde** | Fortifier's parry-window and rebound perks. |
+| **Gothic Style Knockout** | Brawler's Concussive Jab knockdown. |
+| **WeaponUpgrade / ArmorUpgrade** | Reforger XP on repair/upgrade attempts. |
+| **Simply Mining** | Pitmen XP and its higher perks. |
+| **Fishing** | Angler XP and its higher perks. |
+| **Incantation** | Arcanist's Incanted Focus. |
+| **Meditation Skill** | Arcanist's Meditated Mind. |
+| **Toxicology!** | Detected for coordination; no perks depend on it directly. |
 
 ---
 
 ## Settings
 
-The settings menu has nine groups.
+The settings page (under OpenMW's mod settings menu) has ten groups:
 
-**General**
-Master enable switch, Skill Framework registration toggle, attribute-swap toggle (turns off the governing attribute changing when you switch stances), and stance change announcements.
-
-**Stances**
-Individual on/off for all 19 stances. Disabling a stance removes it from detection entirely — the resolver skips it and falls through to the next candidate.
-
-**Perks**
-Master perk toggle and individual perk toggles per stance. Useful for running the skill bonus system without any perk effects.
-
-**Progression**
-Race bonus toggle, class specialization bonus toggle, individual toggles for every XP source (hits, kills, spells, blocks, time, merchant transactions, upgrades, mining, fishing), and the global XP multiplier slider (0–500%).
-
-**Integrations**
-Individual enable toggles for all 15 supported mods. A disabled integration is ignored at detection time even if the mod is installed and loaded.
-
-**HUD Indicator**
-Show or hide the on-screen stance name label. Drag it into position while any menu is open. Lock position toggle. Icon size (8–96 px).
-
-**Tooltip**
-Toggle mechanic information (level, core, attribute, skill bonus, XP progress) and perk listings independently. Option to show only unlocked perks.
-
-**Notifications**
-Perk-unlocked popup style: Disabled, Popup, or Message. Position (Top Left, Top Center, Center, Bottom Left, Bottom Center). Duration (0.5–10 seconds). Maximum visible popups at once (1–10).
-
-**Debug**
-Master debug toggle (must be on for any category to fire) with individual category toggles: general, detection, XP, perks, integrations, and UI.
+- **General** — master on/off, Skill Framework registration, attribute-swap toggle (stops the governing attribute from changing per stance), stance-change announcements.
+- **Stances** — individual on/off for all 19 stances; a disabled stance is skipped during detection.
+- **Perks** — master perk toggle plus a toggle per stance (run pure skill bonuses with no perk effects if you like).
+- **Progression** — race and class bonuses, a toggle for every XP source, and the global XP multiplier.
+- **Integrations** — an enable switch for each of the 15 supported mods.
+- **HUD Indicator** — show/hide and reposition the on-screen stance label; lock toggle; icon size.
+- **Tooltip** — toggle the mechanic readout and the perk list separately; option to show only unlocked perks.
+- **Notifications** — perk-unlock popup style, screen position, duration, and max simultaneous popups.
+- **Debug** — a master debug switch plus per-category logging (detection, XP, perks, integrations, UI).
 
 ---
 
 ## Console Commands
 
-Type `stance` in the OpenMW console.
+Type these in the OpenMW console (prefixed with `stance`):
 
 | Command | Effect |
 |---|---|
-| `stance list` | Print all stances with their current level, skill bonus, target skill, and enabled state. Also shows the active stance and core skill level. |
-| `stance active` | Print the active stance's full details: stance level, core level, skill bonus, target skill, governing attribute, and next perk. |
-| `stance set <id> <level>` | Set a specific stance's level directly. Example: `stance set soloist 75` |
-| `stance set core <level>` | Set the core Stance skill level directly. |
-| `stance reset` | Reset all stance levels to start (5). Core skill level is unchanged. |
-| `stance reload` | Flag the skill for re-registration on the next poll tick. Useful after changing settings mid-session. |
+| `stance list` | List every stance with its level, bonus, target skill, and enabled state. |
+| `stance active` | Full detail on the current stance. |
+| `stance set <id> <level>` | Set one stance's level — e.g. `stance set soloist 75`. |
+| `stance set core <level>` | Set the core Stance skill level. |
+| `stance reset` | Reset all stance levels to 5 (core skill unchanged). |
+| `stance reload` | Re-register the skill on the next tick (handy after changing settings). |
 | `stance help` | Print the command list. |
 
-Stance IDs for use in console commands: `arcanist`, `reforger`, `blademeister`, `huntsman`, `twirler`, `thaumaturge`, `dualist`, `fortifier`, `zweihander`, `guisarmier`, `pitmen`, `axeman`, `mjolnir`, `soloist`, `thief`, `angler`, `brawler`, `locksmith`, `commoner`.
+Valid stance ids: `arcanist`, `reforger`, `blademeister`, `huntsman`, `twirler`, `thaumaturge`, `dualist`, `fortifier`, `zweihander`, `guisarmier`, `pitmen`, `axeman`, `mjolnir`, `soloist`, `thief`, `angler`, `brawler`, `locksmith`, `commoner`.
 
 ---
 
-## Script Interface
+## For Modders — Script Interface
 
-Other mods can query Stance! at runtime via `I.Stance`.
+Other mods can query Stance! at runtime through `I.Stance`:
 
 ```lua
 local I = require('openmw.interfaces')
 
-I.Stance.getActiveStance()         -- returns the active stance id string, or nil
-I.Stance.getStanceLevel(id)        -- level of the named stance (or active if nil)
+I.Stance.getActiveStance()         -- active stance id string, or nil
+I.Stance.getStanceLevel(id)        -- level of a stance (active stance if id is nil)
 I.Stance.getCoreLevel()            -- the shared core Stance skill level
-I.Stance.getSkillBonus(id)         -- the additive skill-point bonus for the named stance
-I.Stance.getTargetSkill(id)        -- the SF skill id the bonus is applied to
+I.Stance.getSkillBonus(id)         -- additive skill-point bonus for a stance
+I.Stance.getTargetSkill(id)        -- the skill id the bonus is applied to
 I.Stance.isPerkUnlocked(id, level) -- true if core level >= the perk threshold
 ```
 
-`getEffectiveness(id)` is also available as a backwards-compatible alias for `getSkillBonus`. It now returns additive skill points rather than the old multiplier value.
+`getEffectiveness(id)` remains as a backwards-compatible alias for `getSkillBonus`; it returns additive skill points, not the old multiplier.
 
 ---
 
-## File Structure
+## How It's Built
 
 ```
 scripts/stance/
-├── init.lua      — player script: detection, XP, perks, HUD, console commands
-├── global.lua    — global script: kill forwarding, settings mirror, event relay
-├── config.lua    — all numerical values, stance definitions, perk ladders, integrations
-└── settings.lua  — OpenMW settings page registration (nine groups)
+├── init.lua                 — player script: detection, resolver, console, event wiring
+├── global.lua               — global script: validated-kill relay, settings mirror
+├── victim.lua               — runs on NPCs/creatures: reports player-dealt hits and kills
+├── perks.lua                — perk logic, attribute/skill contributions, on-hit effects
+├── config.lua               — all numbers: stance defs, perk ladders, integration specs
+├── settings.lua             — settings-page registration (ten groups)
+└── player/
+    ├── skill_framework.lua   — Stance-skill registration, effectiveness bonuses
+    ├── xp.lua                — XP banking and core-skill feed
+    ├── hud.lua               — on-screen stance indicator
+    ├── grip.lua              — GRIP weapon-conversion lookups
+    ├── console.lua           — console command handling
+    └── stat_access.lua       — native attribute/skill/dynamic stat accessors
 ```
+
+A small companion script attached to NPCs and creatures (`victim.lua`) is what makes combat-hit and kill XP reliable: combat-hit events fire on the *victim* in OpenMW, so the victim's script reports back to the player when you land a blow or score a kill, with the kill credited only when you were actually the one who dealt the fatal hit.
 
 ---
 
-## Compatibility Notes
+## Compatibility
 
-Stance! is read-only with respect to every mod it integrates with. It listens to public events and reads public storage sections; it never writes to another mod's state.
-
-The GRIP integration prevents false stance detection when GRIP converts a weapon's effective type at runtime, since the converted record may not match the raw weapon type in hand.
-
-The Blademeister integration uses a record-id prefix scan (`sd_`) rather than a settings section or Skill Framework skill, because the mod registers neither. The prefix is unique in the base game and vanilla mods; if a mod in your load order also uses `sd_` weapon record ids, Blademeister stance may fire unexpectedly.
-
-If your version of the Fishing mod fires a different catch event name than `Fishing_playerCaughtFish`, add an alias in `init.lua`'s `eventHandlers` table pointing to the same handler.
-
-Safe to add to an existing save. Safe to remove — the Skill Framework entry will simply be absent on next load.
+- **Read-only toward other mods.** Stance! listens to public events and reads public storage; it never writes another mod's state. Where it must share a vanilla skill with another mod (e.g. Throwing! also manages Marksman), it yields ownership so the two don't fight.
+- **Safe to add mid-playthrough**, and safe to remove — the Skill Framework entry just won't be there next load.
+- **GRIP:** stance detection accounts for GRIP converting a weapon's effective type at runtime.
+- **Blademeister** is detected by the `sd_` record-id prefix; if another mod in your load order uses that prefix for weapons, Blademeister may trigger on them.
+- **Fishing:** if your Fishing version emits a catch event other than `Fishing_playerCaughtFish`, add an alias for it in `init.lua`'s `eventHandlers` table.
