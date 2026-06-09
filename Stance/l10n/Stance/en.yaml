@@ -1,0 +1,263 @@
+PageName: Stance!
+PageDescription: Dynamic stance system. The displayed skill name, governing attribute, description, and perks all change based on the weapon style you currently have active. Inspired by For Honor's stance system and built to interlope with Toxicology, Throwing, Staves, Bullseye, N'Garde, Dual Wielding, GRIP, Gothic Style Knockout, Incantation, Meditation, Weapon Upgrade, and Armor Upgrade.
+
+GroupGeneralName: General
+GroupGeneralDescription: Master on/off switches for the whole mod. Most users only need to touch the first toggle.
+SettingEnabled: Enable Mod
+SettingEnabledDescription: Master toggle for all Stance! functionality. When disabled, stance detection, perks, the HUD indicator, and notifications are all suspended.
+SettingEnableSkillRegistration: Register Skill in Skill Framework
+SettingEnableSkillRegistrationDescription: Register a Skill Framework entry for Stance so the active stance appears in the stats window. Disable to use Stance! internally without showing a skill entry.
+SettingEnableAttributeSwap: Dynamic Governing Attribute
+SettingEnableAttributeSwapDescription: When enabled, the Stance skill's governing attribute swaps to match the active stance (Strength for Brawler, Intelligence for Arcanist, and so on). When disabled, the skill is always governed by Luck.
+SettingAnnounceStanceChange: Announce Stance Changes
+SettingAnnounceStanceChangeDescription: Show a brief message every time the active stance changes. Useful for tracking fast weapon swaps; redundant if you rely on the HUD indicator.
+
+GroupStancesName: Stances
+GroupStancesDescription: Per-stance on/off toggles, ordered top-to-bottom by detection priority. The first stance whose conditions match becomes active; disabled stances are skipped over.
+SettingEnableLocksmith: Enable Locksmith
+SettingEnableLocksmithDescription: Active when the player has a lockpick OR a probe actively equipped (readied via the Use action — not just sitting in inventory). Either tool alone is enough to trigger the stance. Triggers regardless of weapon stance. Governed by Agility (matching vanilla Security). Perks add Security skill, less probe breakage, Sneak skill, and a lock-difficulty capstone.
+SettingEnableCommoner: Enable Commoner
+SettingEnableCommonerDescription: Active when weapons are sheathed with no lockpicks/probes — the everyday-life fallback stance. Governed by Luck. Perks add Mercantile, Speechcraft, and disposition bonuses.
+SettingEnableArcanist: Enable Arcanist
+SettingEnableArcanistDescription: Active in spellcasting stance. Governed by Intelligence. Interlopes with Incantation and Meditation Skill.
+SettingEnableReforger: Enable Reforger
+SettingEnableReforgerDescription: Active when wielding the Armorer's Repair Hammer (from Weapon Upgrade or Armor Upgrade). Governed by Endurance. Perks are combat-themed — they make the hammer a real weapon. Lower fatigue drain, armor penetration, armor sundering on hit, and a damage and stagger capstone.
+SettingEnableBlademeister: Enable Blademeister
+SettingEnableBlademeisterDescription: Active when wielding Felthorn — the shapeshifting Daedra weapon from the Blademeister mod — in any of its 180+ shapeshifted forms (rapier, claymore, longsword, shortsword, dagger, mace, axe, halberd, bow, etc.). Detection uses the sd_ record-id prefix the mod author applies to every Felthorn form. Governed by Agility, matching the Maka-meister archetype from Soul Eater. Perks build the meister-weapon pact — Soul Perception (Sneak + Mysticism bonus), Soul Wavelength (damage and disrupt), Witch Hunter (power-attack finisher), and Soul Resonance (the capstone — peak resonance with Felthorn).
+SettingEnableHuntsman: Enable Huntsman
+SettingEnableHuntsmanDescription: Active when a bow or crossbow is equipped. Governed by Speed. Interlopes with Bullseye for headshot bonuses.
+SettingEnableTwirler: Enable Twirler
+SettingEnableTwirlerDescription: Active when a thrown weapon is equipped. Governed by Agility; boosts the Throwing skill. Requires the Throwing! integration for its perks.
+SettingEnableThaumaturge: Enable Thaumaturge
+SettingEnableThaumaturgeDescription: Active when a stave (BluntTwoWide) is equipped. Governed by Willpower. Interlopes with Staves!.
+SettingEnableDualist: Enable Dualist
+SettingEnableDualistDescription: Active when dual-wielding via the Dual Wielding mod off-hand. Governed by Speed.
+SettingEnableFortifier: Enable Fortifier
+SettingEnableFortifierDescription: Active whenever a shield is equipped, regardless of the weapon in the other hand. Governed by Strength. Interlopes with N'Garde for parry effectiveness.
+SettingEnableGuisarmier: Enable Guisarmier
+SettingEnableGuisarmierDescription: Active when wielding a spear (SpearTwoWide). Governed by Endurance (matching vanilla Spear). Perks add reach damage, charge resistance, slow on hit, and a fatigue-economy capstone.
+SettingEnableAxeman: Enable Axeman
+SettingEnableAxemanDescription: Active when wielding any axe (AxeOneHand or AxeTwoHand). Governed by Strength. Perks add damage, power-attack bonuses, a small bleed proc, and an armor-ignore capstone.
+SettingEnablePitmen: Enable Pitmen
+SettingEnablePitmenDescription: Active when the Miner's Pick (record id "miner's pick", a two-handed axe) is equipped. Governs both combat with the pick and ore-mining via Simply Mining. Governed by Endurance. When disabled, the Miner's Pick falls through to Axeman. Perks add combat damage, and — when Simply Mining is present — faster mining and improved ore yield.
+SettingEnableMjolnir: Enable Mjolnir
+SettingEnableMjolnirDescription: Active when wielding a blunt one-handed weapon (BluntOneHand — maces, clubs) or a blunt two-handed close weapon (BluntTwoClose — warhammers, mauls). Staves (BluntTwoWide) are excluded — those route to Thaumaturge instead. Governed by Strength. Perks add flat damage, power-attack bonuses, a stagger proc, and an armor-ignore capstone.
+SettingEnableZweihander: Enable Zweihänder
+SettingEnableZweihanderDescription: Active when wielding a two-handed long blade specifically (LongBladeTwoHand). Other two-handed weapons — axes (now Axeman), blunts, spears (now Guisarmier) — do NOT qualify and fall through to Commoner. Governed by Strength. With GRIP enabled, a GRIP-converted long-blade-2H weapon still classifies as long blade 2H here.
+SettingEnableSoloist: Enable Soloist
+SettingEnableSoloistDescription: Active when wielding a one-handed long blade specifically (LongBladeOneHand) with no shield and no off-hand weapon. Other one-handed weapons — short blades (now Thief), blunts, axes (now Axeman) — do NOT qualify and fall through to Commoner. Governed by Endurance.
+SettingEnableThief: Enable Thief
+SettingEnableThiefDescription: Active when wielding a short blade (ShortBladeOneHand). Governed by Speed (matching vanilla Short Blade). Perks add attack speed, Sneak skill, backstab damage, and a movement-speed capstone.
+SettingEnableBrawler: Enable Brawler
+SettingEnableBrawlerDescription: Active when fists are up with no weapon equipped. Governed by Strength. Interlopes with Gothic Style Knockout for knockout chance.
+SettingEnableApothecary: Enable Apothecary
+SettingEnableApothecaryDescription: Active whenever a Thrown Concoction is equipped as your weapon (the concoctions from the Thrown Concoctions mod are thrown weapons). Governed by Intelligence and boosts Alchemy. Levels only when a hurled concoction lands on an enemy. Requires the Thrown Concoctions mod. With the integration off, concoctions are treated as ordinary thrown weapons (the Twirler stance) instead.
+
+GroupPerksName: Perks
+GroupPerksDescription: Toggle perks per stance or all at once. Disabled perks do not fire their effects, but the stance still gains XP and levels normally. Stance order matches the Stances group for easy cross-reference.
+SettingEnableAllPerks: Enable All Perks (Master)
+SettingEnableAllPerksDescription: Master toggle for every Stance perk. When OFF, stances still detect and level, but no perk bonuses fire — useful for testing the underlying stance system without perk effects.
+SettingEnableLocksmithPerks: Locksmith Perks
+SettingEnableLocksmithPerksDescription: Light Fingers (25), Probe Sage (50), Sneak Step (75), Master of Locks (100). Tool-themed.
+SettingEnableCommonerPerks: Commoner Perks
+SettingEnableCommonerPerksDescription: Merchant's Eye (25), Silver Tongue (50), Urban Charm (75), The People's Hero (100). Social-themed.
+SettingEnableArcanistPerks: Arcanist Perks
+SettingEnableArcanistPerksDescription: Focused Chant (25), Meditated Mind (50), Incanted Focus (75), Aethereal Mind (100). Magicka-themed.
+SettingEnableReforgerPerks: Reforger Perks
+SettingEnableReforgerPerksDescription: Anvil Arms (25), Weak-Point Strike (50), Sundering Blow (75), Forgemaster's Touch (100). Combat-themed — the hammer as a weapon.
+SettingEnableBlademeisterPerks: Blademeister Perks
+SettingEnableBlademeisterPerksDescription: Soul Perception (25), Soul Wavelength (50), Witch Hunter (75), Soul Resonance (100). Soul Eater themed — the meister and weapon partnership growing across the four perk thresholds.
+SettingEnableHuntsmanPerks: Huntsman Perks
+SettingEnableHuntsmanPerksDescription: Steady Aim (25), Pinning Shot (50), Concussive Shot (75), Killshot (100). Ranged-themed.
+SettingEnableTwirlerPerks: Twirler Perks
+SettingEnableTwirlerPerksDescription: Edged Spin (25), Twinned Throw (50), Rending Hand (75), Whirlwind Arm (100). Throwing-themed; effects are applied through Throwing!.
+SettingEnableThaumaturgePerks: Thaumaturge Perks
+SettingEnableThaumaturgePerksDescription: Concussive Accord (25), Siphoned Accord (50), Resonant Accord (75), Pulsed Accord (100). Stave-themed.
+SettingEnableDualistPerks: Dualist Perks
+SettingEnableDualistPerksDescription: Light Footwork (25), Mirror Edge (50), Twin Tempo (75), Cross Guard (100). Dual-wielding-themed.
+SettingEnableFortifierPerks: Fortifier Perks
+SettingEnableFortifierPerksDescription: Shield Up (25), Warden Stance (50), Perfect Guard (75), Bulwark (100). Block-themed.
+SettingEnableGuisarmierPerks: Guisarmier Perks
+SettingEnableGuisarmierPerksDescription: Reach Advantage (25), Phalanx Brace (50), Pinning Thrust (75), Polearm Master (100). Spear-themed.
+SettingEnableAxemanPerks: Axeman Perks
+SettingEnableAxemanPerksDescription: Cleaving Edge (25), Heavy Chop (50), Bleeding Cut (75), Headsman (100). Axe-themed.
+SettingEnablePitmenPerks: Pitmen Perks
+SettingEnablePitmenPerksDescription: Rough-Hewn (25), Vein Reader (50), Prospector (75), Pit Boss (100). The first two are combat-themed; the latter two require Simply Mining and enhance ore mining.
+SettingEnableMjolnirPerks: Mjolnir Perks
+SettingEnableMjolnirPerksDescription: Iron Heft (25), Crushing Blow (50), Concussive Force (75), Thunderstrike (100). Blunt-weapon-themed.
+SettingEnableZweihanderPerks: Zweihänder Perks
+SettingEnableZweihanderPerksDescription: Two-Hand Grip (25), Sweeping Arc (50), Cleaving Blow (75), Titan Grip (100). Long-blade-2H-themed.
+SettingEnableSoloistPerks: Soloist Perks
+SettingEnableSoloistPerksDescription: Planted Feet (25), Heavy Hand (50), Unstoppable (75), Solitary Will (100). Solo-1H-themed.
+SettingEnableThiefPerks: Thief Perks
+SettingEnableThiefPerksDescription: Quick Strike (25), Cutpurse (50), Backstab (75), Master Thief (100). Short-blade-themed.
+SettingEnableBrawlerPerks: Brawler Perks
+SettingEnableBrawlerPerksDescription: Iron Grip (25), Close-Range Fighter (50), Concussive Jab (75), Street Master (100). Unarmed-themed.
+SettingEnableApothecaryPerks: Apothecary Perks
+SettingEnableApothecaryPerksDescription: Deft Hurler (25), Volatile Concoction (50), Corrosive Cloud (75), Master Apothecary (100). Concoction-throwing themed. The on-hit effects (stagger, caustic cloud, paralysis) fire whenever a thrown concoction strikes an enemy; the passive Agility, Intelligence and Luck bonuses apply regardless.
+
+GroupProgressionName: Progression
+GroupProgressionDescription: How the player gains Stance levels. Each XP source has its own toggle. The XP multiplier applies globally — set to 50 for half-speed leveling, 200 for double-speed, and so on.
+SettingEnableRaceBonuses: Enable Race Bonuses
+SettingEnableRaceBonusesDescription: Apply a uniform small starting bonus to Stance for every race. Stance applies to everyone; specialised builds come from per-stance grind. Only effective on new characters.
+SettingEnableClassBonus: Enable Class Bonus
+SettingEnableClassBonusDescription: Grant +10 starting Stance to any class with Combat specialisation.
+SettingXpOnHit: XP on Successful Hit
+SettingXpOnHitDescription: Grant XP to the active stance every time you land a successful weapon hit.
+SettingXpOnKill: XP on Kill
+SettingXpOnKillDescription: Grant bonus XP to the active stance when an enemy dies. Knockouts via Gothic Style Knockout count toward Brawler as a kill.
+SettingXpOnSpellCast: XP on Spell Cast
+SettingXpOnSpellCastDescription: Grant Arcanist XP every time you cast a spell while in spellcasting stance.
+SettingXpOnBlock: XP on Successful Block
+SettingXpOnBlockDescription: Legacy block XP source for the active stance. The Fortifier stance no longer earns from this; it earns from parries instead (see "XP on Parry"). Kept for compatibility.
+
+SettingXpOnParry: XP on Parry
+SettingXpOnParryDescription: Grant Fortifier XP when an N'Garde parry succeeds. A successful parry is worth 1.2 XP and a perfect parry 2.4 XP, before the global multiplier. This is the Fortifier stance's XP source — it does NOT earn from landing weapon hits. Requires the N'Garde integration.
+SettingXpOnTime: XP from Time in Stance
+SettingXpOnTimeDescription: Grant a small XP tick every 10 seconds spent in a stance. Lets non-combat stances (Commoner, Locksmith, Arcanist between fights) still progress.
+SettingXpOnMerchant: XP from Merchant Interactions
+SettingXpOnMerchantDescription: Grant Commoner XP when you complete a barter transaction. Detection is best-effort and may miss some merchants.
+SettingXpOnUpgrade: XP from Weapon or Armor Upgrades
+SettingXpOnUpgradeDescription: Grant Reforger XP when you successfully upgrade a weapon or piece of armor via Weapon Upgrade or Armor Upgrade. Failed attempts grant a smaller amount.
+SettingXpOnMining: XP from Ore Mining
+SettingXpOnMiningDescription: Grant Pitmen XP whenever Simply Mining confirms a successful ore mine while the Miner's Pick is equipped. Each completed mine is worth 3 XP before the global multiplier is applied.
+SettingXpMultiplier: XP Multiplier (percent)
+SettingXpMultiplierDescription: Global multiplier applied to all Stance XP gain. 100 is normal speed, 50 is half-speed, 200 is double-speed. Applies to every stance and every XP source.
+
+GroupIntegrationsName: Integrations
+GroupIntegrationsDescription: External mod hookups, grouped by category. Disabling an integration falls back to native detection for the affected stance — the stance still works, but loses any mod-specific perk catalysts.
+SettingIntegrateIncantation: Incantation
+SettingIntegrateIncantationDescription: Credit Arcanist XP on Incantation skill gains via the Skill Progression hook.
+SettingIntegrateMeditation: Meditation Skill
+SettingIntegrateMeditationDescription: Credit Arcanist XP on Meditation Skill ticks via the Skill Progression hook.
+SettingIntegrateNGarde: N'Garde
+SettingIntegrateNGardeDescription: Use N'Garde parry-success events to credit block XP and to gate Fortifier's block-effectiveness perks.
+SettingIntegrateDualWielding: Dual Wielding
+SettingIntegrateDualWieldingDescription: Use Dual Wielding's EquipSecondWeapon / RemoveSecondWeapon events to track when an off-hand weapon is mounted. Without this, Dualist never activates.
+SettingIntegrateGothicKnockout: Gothic Style Knockout
+SettingIntegrateGothicKnockoutDescription: Listen for Gothic Style Knockout's GKD_DoKnockdown event to credit Brawler XP on confirmed knockouts and to gate the Brawler Concussive Jab perk.
+SettingIntegrateThrowing: Throwing!
+SettingIntegrateThrowingDescription: Use Throwing!'s skill level and perks as the catalyst for the Twirler stance. Twirler boosts the Throwing skill directly; its perks (Edged Spin, Twinned Throw, Rending Hand, Whirlwind Arm) are applied through Throwing! via the Stance_TwirlerBonuses event.
+SettingIntegrateStaves: Staves!
+SettingIntegrateStavesDescription: Use Staves!'s skill level and perks as the catalyst for Thaumaturge stance bonuses.
+SettingIntegrateBullseye: Bullseye
+SettingIntegrateBullseyeDescription: Treat Bullseye's ranged-headshot signal as a Huntsman bonus source and gate the Huntsman armor-ignore proc.
+SettingIntegrateGRIP: GRIP
+SettingIntegrateGRIPDescription: Read GRIP's weapon-conversion maps so a GRIP-converted weapon classifies by its original type (a 2H weapon converted to 1H still triggers Zweihänder, and so on).
+SettingIntegrateBlademeister: Blademeister
+SettingIntegrateBlademeisterDescription: Detect Felthorn (the shapeshifting Daedra weapon from the Blademeister mod) by its sd_ record-id prefix. When this integration is on and Felthorn is equipped, the Blademeister stance activates regardless of the underlying weapon type Felthorn has transformed into. Disable this if you want Felthorn forms to classify by their underlying weapon type (claymore → Zweihänder, rapier → Soloist, etc.) instead.
+SettingIntegrateWeaponUpgrade: Weapon Upgrade
+SettingIntegrateWeaponUpgradeDescription: Detect the Armorer's Repair Hammer for Reforger stance detection and listen for upgrade-success messages to credit Reforger XP.
+SettingIntegrateArmorUpgrade: Armor Upgrade
+SettingIntegrateArmorUpgradeDescription: Same hammer as Weapon Upgrade — detect it for Reforger stance detection and listen for upgrade-success messages.
+SettingIntegrateSimplyMining: Simply Mining
+SettingIntegrateSimplyMiningDescription: Detect Simply Mining via its SkillFramework skill (mining_skill). When present, Pitmen stance earns XP on every successful ore mine (SimplyMining_notifyItem event), and broadcasts Stance_PitmenMiningStart with speed/yield bonus data that SimplyMining or a bridge script can consume to apply the Vein Reader and Prospector perks.
+SettingIntegrateToxicology: Toxicology!
+SettingIntegrateToxicologyDescription: Treat Toxicology's poison state as a signal for stance effectiveness on Twirler and Huntsman.
+
+GroupHUDName: HUD Indicator
+GroupHUDDescription: The on-screen text label that shows the name of the currently active stance. Click and drag it to any position while an inventory-like menu (Inventory, Map, Magic, Stats, Container, Barter) is open; the position auto-saves. Lock the position to disable drag without hiding the indicator.
+SettingShowHudIndicator: Show HUD Indicator
+SettingShowHudIndicatorDescription: Display the active stance name as a small text overlay. The overlay shows only the stance name — no level, no icon, no decoration.
+SettingHudIndicatorLockPosition: Lock HUD Position
+SettingHudIndicatorLockPositionDescription: Prevent click-and-drag repositioning of the HUD indicator. The X and Y settings below remain authoritative when locked.
+SettingHudIndicatorIconSize: HUD Text Size
+SettingHudIndicatorIconSizeDescription: Pixel size of the HUD indicator text (8 to 96).
+SettingHudIndicatorX: HUD X Position
+SettingHudIndicatorXDescription: Horizontal pixel position of the HUD indicator. Set to 0 to use the default lower-left placement. Updated automatically when you drag the indicator. Values are clamped to the HUD layer size at runtime, so very large numbers are safe.
+SettingHudIndicatorY: HUD Y Position
+SettingHudIndicatorYDescription: Vertical pixel position of the HUD indicator. Set to 0 to use the default lower-left placement. Updated automatically when you drag the indicator. Values are clamped to the HUD layer size at runtime, so very large numbers are safe.
+
+GroupTooltipName: Tooltip
+GroupTooltipDescription: What appears inside the dynamic Stance-skill tooltip in the stats window. All four toggles can be turned off for a minimal tooltip that shows only the active stance description and current level.
+SettingShowMechanicTooltips: Show Mechanic Details
+SettingShowMechanicTooltipsDescription: Include the governing attribute and effectiveness category in the tooltip.
+SettingShowPerkTooltips: Show Perks
+SettingShowPerkTooltipsDescription: Include the active stance's perk ladder (all four perks with their unlock thresholds and effects) in the tooltip.
+SettingTooltipUnlockedOnly: Show Only Unlocked Perks
+SettingTooltipUnlockedOnlyDescription: Hide locked perks from the tooltip — only perks you have already unlocked appear. Disable to see what perks are still ahead.
+
+GroupNotificationsName: Notifications
+GroupNotificationsDescription: How perk-unlocked notifications appear when a stance crosses a 25 / 50 / 75 / 100 threshold.
+SettingPerkMessageStyle: Notification Style
+SettingPerkMessageStyleDescription: How perk-unlocked notifications are shown. Disabled = no notification. Popup = custom in-house overlay (default, configurable below). Message = standard OpenMW message box.
+SettingPopupPosition: Popup Position
+SettingPopupPositionDescription: Where the perk-unlock popup appears on screen. Default is Bottom Center.
+SettingPopupDuration: Popup Duration (seconds)
+SettingPopupDurationDescription: How long each perk-unlocked popup stays on screen before fading out (0.5 to 10 seconds).
+SettingPopupMaxVisible: Maximum Stacked Popups
+SettingPopupMaxVisibleDescription: Cap on how many perk popups can be on screen at once. Older popups are dismissed when the cap is reached.
+
+GroupDebugName: Debug
+GroupDebugDescription: Verbose logging for troubleshooting. All categories are off by default. The master toggle gates ALL categories — enabling a category alone has no effect until the master is also on.
+SettingDebugMessages: Master Debug Toggle
+SettingDebugMessagesDescription: Enable Stance debug logging. Specific categories below decide what actually prints.
+SettingDebugDetectionMessages: Stance Detection
+SettingDebugDetectionMessagesDescription: Print a line every time the active stance changes, including the trigger reason.
+SettingDebugXpMessages: XP Grants
+SettingDebugXpMessagesDescription: Print a line every time XP is granted to a stance, with the source and the stance's current level.
+SettingDebugPerkMessages: Perk Events
+SettingDebugPerkMessagesDescription: Print a line every time a perk is unlocked.
+SettingDebugIntegrationMessages: Integrations
+SettingDebugIntegrationMessagesDescription: Print a line whenever an external mod is detected or stops being detected.
+SettingDebugUiMessages: UI Updates
+SettingDebugUiMessagesDescription: Print a line whenever the HUD indicator, tooltip, or stats window entry is rebuilt.
+
+# ─── Angler stance ────────────────────────────────────────────────────────
+SettingEnableAngler: Enable Angler
+SettingEnableAnglerDescription: Active when a fishing pole (record id "a_fishing_pole" or "hb_fishing_pole" from Fish With Fishing Poles Expansion) is equipped. Governed by Luck. Interlopes with the Fishing mod for catch-rate bonuses and fish-quality perks. When disabled, the fishing pole falls through to whatever weapon-type branch applies (Thaumaturge for staves, Guisarmier for spears, etc.).
+
+SettingEnableAnglerPerks: Angler Perks
+SettingEnableAnglerPerksDescription: Steady Grip (25), Catch and Release (50), Trophy Cast (75), Master Angler (100). The first perk is pure combat; the remaining three require the Fishing mod and reward skilled fishing.
+
+SettingXpOnFishing: XP from Fish Catches
+SettingXpOnFishingDescription: Grant Angler XP whenever the Fishing mod confirms a successful fish catch while the fishing pole is equipped. Each catch is worth 3 XP before the global multiplier. Requires the Fishing integration to be enabled.
+
+SettingIntegrateFishing: Fishing
+SettingIntegrateFishingDescription: Detect the Fishing mod via its Skill Framework skill (fishing_skill). When present, Angler stance earns XP on every successful catch (Fishing_playerCaughtFish event) and broadcasts Stance_AnglerCatch with bonus-fish chance, skill bonus, and cast-speed bonus data that the Fishing mod or a bridge script can consume to apply the Catch and Release, Trophy Cast, and Master Angler perks. NOTE — if your version of the Fishing mod fires a different player event (e.g. Fishing_CaughtFish, Fishing_notifyItem), add an alias entry in the eventHandlers table in init.lua.
+
+SettingXpOnLockpick: XP from Lockpicking
+SettingXpOnLockpickDescription: Grant Locksmith XP whenever Oblivion-Style Lockpicking confirms a successful pick or probe while a lockpick or probe is readied. Each success is worth 2 XP before the global multiplier. Requires the Oblivion-Style Lockpicking integration to be enabled.
+
+SettingIntegrateOblivionLockpicking: Oblivion-Style Lockpicking
+SettingIntegrateOblivionLockpickingDescription: Detect the Oblivion-Style Lockpicking mod via its settings group and its OSL_LockpickSuccess event. When present, the Locksmith stance earns XP on every successful pick or probe. Stance's global script relays OSL_LockpickSuccess (a global event) to the player as Stance_LockpickSuccess. NOTE — if your version of OSL fires a different event name, update the global.lua eventHandlers entry to match.
+
+SettingXpOnTalk: XP from Talking
+SettingXpOnTalkDescription: Grant Commoner XP whenever you start a conversation with an NPC while weapons are sheathed (the Commoner stance). The first conversation with a given NPC is worth 1 XP; later conversations with an NPC you have already met are worth 0.25 XP, both before the global multiplier. The spoken-to list resets when the game loads. Works whether or not the Talking Trains Speechcraft mod is installed.
+
+SettingXpOnDisenchant: XP from Disenchanting
+SettingXpOnDisenchantDescription: Grant Arcanist or Thaumaturge XP (whichever stance is active) whenever the Disenchanting mod confirms a successful disenchant. The reward is a flat base plus a bonus that scales with the enchantment's magnitude. Requires the Disenchanting integration to be enabled.
+
+SettingIntegrateTalkingTrains: Talking Trains Speechcraft
+SettingIntegrateTalkingTrainsDescription: Detect the Talking Trains Speechcraft mod via its settings group. The Commoner talking-XP source reacts to the same dialogue-opened signal Talking Trains uses, so it works independently; this toggle is provided for visibility and to disable the talking-XP source's association if desired.
+
+SettingIntegrateDisenchanting: Disenchanting
+SettingIntegrateDisenchantingDescription: Detect the Disenchanting mod via its skill-progression settings group. When present, the Arcanist and Thaumaturge stances earn XP on every successful disenchant via the mod's disenchanting_finishedDisenchanting event.
+
+SettingXpOnCommercium: XP from Trading (Commercium)
+SettingXpOnCommerciumDescription: Grant Commoner XP whenever the Commercium / Fair Trade mod confirms a barter transaction while weapons are sheathed (the Commoner stance). A flat base plus a bonus scaled by the value of the deal, capped, before the global multiplier. Requires the Commercium integration to be enabled. With Commercium installed, transactions flow through its event rather than the vanilla merchant source.
+
+SettingXpOnTranscribe: XP from Transcribing
+SettingXpOnTranscribeDescription: Grant Arcanist or Thaumaturge XP (whichever stance is active) whenever the Transcribe mod confirms a successful spell transcription. Each transcription is worth 3 XP before the global multiplier. Requires the Transcribe integration to be enabled.
+
+SettingXpOnConcoctionHit: XP from Concoction Throws
+SettingXpOnConcoctionHitDescription: Grant Apothecary XP whenever a thrown concoction lands on an enemy. Each landed concoction is worth 2.5 XP before the global multiplier (more than a plain melee hit, since every throw expends a concoction). Requires the Thrown Concoctions integration to be enabled.
+SettingXpOnTrapHit: XP from Trap Catches
+SettingXpOnTrapHitDescription: Grant Thief XP whenever an enemy is caught by one of your armed traps (from the Traps mod). Worth 3 XP before the global multiplier, credited to the Thief stance no matter what you are wielding. Requires the Traps integration to be enabled.
+SettingXpOnOilBurn: XP from Oil Fires
+SettingXpOnOilBurnDescription: Grant Apothecary XP while an enemy stands in one of your burning oil pools (from the Oil Flask mod). A small amount is credited about once per second for as long as the enemy keeps burning, to the Apothecary stance no matter what you are wielding. Requires the Oil Flask integration to be enabled.
+
+SettingIntegrateCommercium: Commercium / Fair Trade
+SettingIntegrateCommerciumDescription: Detect the Commercium / Fair Trade mod via its player settings group. When present, the Commoner stance earns XP on each barter transaction via the mod's FairTrade_Transaction event (relayed to the player through Stance's global script).
+
+SettingIntegrateTranscribe: Transcribe
+SettingIntegrateTranscribeDescription: Detect the Transcribe mod via its settings group. When present, the Arcanist and Thaumaturge stances earn XP on each successful spell transcription via the mod's TRAN_doTranscribe event (relayed to the player through Stance's global script).
+
+SettingIntegrateThrownConcoctions: Thrown Concoctions
+SettingIntegrateThrownConcoctionsDescription: Detect the Thrown Concoctions mod via the presence of its concoction weapon records. When present, equipping one of its thrown concoctions activates the Apothecary stance, which earns XP and triggers its on-hit effects when a concoction strikes an enemy. Turn this off to treat concoctions as ordinary thrown weapons (the Twirler stance) instead.
+SettingIntegrateVeneficVials: Venefic Vials
+SettingIntegrateVeneficVialsDescription: Detect the Venefic Vials mod via the presence of its throwable vial weapon record. When present, equipping a Throwning Venefic Vial activates the Apothecary stance, exactly like a thrown concoction. Turn this off to treat the vials as ordinary thrown weapons (the Twirler stance) instead. The deployable (non-thrown) vials are not affected by this setting.
+SettingIntegrateTraps: Traps
+SettingIntegrateTrapsDescription: Detect the Traps mod via the presence of its trap record. When present, an enemy caught by one of your armed traps grants XP to the Thief stance (trapping is a thief's craft), regardless of what you are wielding. Turn this off to stop traps from granting Thief XP.
+SettingIntegrateOilFlask: Oil Flask
+SettingIntegrateOilFlaskDescription: Detect the Oil Flask mod via the presence of its oil-pool record. When present, an enemy burning in one of your lit oil pools grants XP to the Apothecary stance, regardless of what you are wielding. Credit is only given while the oil is actually on fire. Turn this off to stop oil fires from granting Apothecary XP.
