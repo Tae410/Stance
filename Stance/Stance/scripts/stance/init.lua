@@ -1164,10 +1164,10 @@ local function onForeignSkillUsed(foreignSkillId, params)
     if not readSetting('', 'enabled', true) then return end
     if not foreignSkillId then return end
 
-    -- Meditation Skill → Arcanist tick (only while Arcanist active).
+    -- Meditation Skill → Arcanist tick (regardless of active stance, half rate).
     if foreignSkillId == 'meditation_skill' then
-        if activeStanceId == 'arcanist' and integrationPresent('meditation') then
-            grantStanceXp(config.xp.meditateTick or 0.4, 'meditate', 'arcanist')
+        if integrationPresent('meditation') and stanceEnabled('arcanist') then
+            grantStanceXpDirect((config.xp.meditateTick or 0.4) / 2, 'meditate', 'arcanist')
         end
         return
     end

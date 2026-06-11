@@ -219,23 +219,21 @@ function M.new(ctx)
     -- the Arcanist (spellcasting) and Thaumaturge (stave) stances earn from it —
     -- whichever is active at the time. The reward is a flat base plus a capped
     -- bonus scaled by the enchantment magnitude (enchPoints).
-    local DISENCHANT_STANCES = { arcanist = true, thaumaturge = true }
-
     local function onDisenchantFinished(payload)
         if not readSetting('', 'enabled', true) then return end
-        if not DISENCHANT_STANCES[getActiveStance()] then return end
-        if not stanceEnabled(getActiveStance()) then return end
         if not integrationEnabled('disenchanting') then return end
         if not readSetting('Progression', 'xpOnDisenchant', true) then return end
+        if not stanceEnabled('arcanist') then return end
 
         local points = 0
         if type(payload) == 'table' then points = tonumber(payload.enchPoints) or 0 end
-        local base  = config.xp.disenchantBase or 1.5
-        local bonus = math.min((config.xp.disenchantMaxBonus or 6.0),
-                               points * (config.xp.disenchantPerPoint or 0.05))
-        grantStanceXp(base + bonus, 'disenchant', getActiveStance())
-        debugLog(string.format('%s credited for a disenchant (%.1f points).',
-            getActiveStance(), points), 'debugPerkMessages')
+        -- Half the normal XP amount, regardless of current stance
+        local base  = (config.xp.disenchantBase or 1.5) / 2
+        local bonus = math.min((config.xp.disenchantMaxBonus or 6.0) / 2,
+                               points * (config.xp.disenchantPerPoint or 0.05) / 2)
+        grantStanceXpDirect(base + bonus, 'disenchant', 'arcanist')
+        debugLog(string.format('Arcanist credited for a disenchant (%.1f points, half rate).',
+            points), 'debugPerkMessages')
     end
 
     -- ── Commercium / Fair Trade integration (Commoner) ────────────────────────
@@ -268,13 +266,13 @@ function M.new(ctx)
     -- arcane work, so whichever of Arcanist or Thaumaturge is active earns XP.
     local function onTranscribeSuccess(_payload)
         if not readSetting('', 'enabled', true) then return end
-        if not DISENCHANT_STANCES[getActiveStance()] then return end  -- arcanist/thaumaturge
-        if not stanceEnabled(getActiveStance()) then return end
         if not integrationEnabled('transcribe') then return end
         if not readSetting('Progression', 'xpOnTranscribe', true) then return end
+        if not stanceEnabled('arcanist') then return end
 
-        grantStanceXp(config.xp.transcribeSuccess or 3.0, 'transcribe', getActiveStance())
-        debugLog(getActiveStance() .. ' credited for a spell transcription.', 'debugPerkMessages')
+        -- Half the normal XP amount, regardless of current stance
+        grantStanceXpDirect((config.xp.transcribeSuccess or 3.0) / 2, 'transcribe', 'arcanist')
+        debugLog('Arcanist credited for a spell transcription (half rate).', 'debugPerkMessages')
     end
 
     -- ── Commoner: talking to NPCs (pairs with Talking Trains Speechcraft) ─────
