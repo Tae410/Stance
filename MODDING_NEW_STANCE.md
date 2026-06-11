@@ -19,7 +19,7 @@ Adding one means touching a handful of tables across four files. None of it is h
 
 ## 0. Before you start: how detection works
 
-Every tick, the player script (`init.lua`) runs `resolveStance(now)`. It builds a few facts about the player's current state, then walks a **fixed priority list** of `if` branches. **The first branch that matches wins.** The variables available to every branch are:
+Every tick, the player script runs `resolveStance(now)` — which, along with every classifier it relies on, lives in **`player/resolver.lua`** (init.lua constructs the module and calls it from `onUpdate`). It builds a few facts about the player's current state, then walks a **fixed priority list** of `if` branches. **The first branch that matches wins.** The variables available to every branch are:
 
 | Variable | Meaning |
 |---|---|
@@ -28,7 +28,8 @@ Every tick, the player script (`init.lua`) runs `resolveStance(now)`. It builds 
 | `rightRec` | the raw weapon record of `right` |
 | `effRec` | the **GRIP-aware** record — the *original* type if GRIP converted the weapon; use this for normal type classification |
 | `runtimeRec` | the **current/converted** record as it exists in-hand right now |
-| `shield` | the equipped shield record, or `nil` |
+
+> **There is no `shield` fact.** Shields are no longer a resolver input. The old *Fortifier* stance ("shield equipped") has been **deprecated** into the **Fortified** name prefix + Block bonus, applied *after* resolution in `formatStanceName` / `refreshFortified` (both in `player/prefixes.lua`; see §8). If your stance somehow needs the off-hand item, model it on `getEquippedShield()` in `player/prefixes.lua` — but a normal stance never should.
 
 Each branch ends by calling the local helper `pick(id, reason)`:
 
@@ -45,7 +46,7 @@ if r then return r end
 
 ## 1. Define the stance — `config.lua`
 
-`config.lua` holds the `stances` array (around line 124). Each entry is a self-contained table. Add a new one following this shape:
+`config.lua` holds the `stances` array. Each entry is a self-contained table. Add a new one following this shape:
 
 ```lua
 {
@@ -81,7 +82,7 @@ That's the data. Nothing here makes the stance *do* anything yet.
 
 ## 2. Set the target skill — `STANCE_SKILL_TARGET` in `init.lua`
 
-This table (around line 973) maps each stance id to the skill that receives its level-scaled bonus (+2 at stance level 5, up to +20 at 100). Add your entry:
+This table maps each stance id to the skill that receives its level-scaled bonus (+2 at stance level 5, up to +20 at 100). Add your entry:
 
 ```lua
 flailman = { vanilla = 'bluntweapon' },
@@ -99,6 +100,8 @@ Valid vanilla skill ids are the OpenMW strings: `longblade`, `shortblade`, `blun
 
 If you use `dynamic = true`, you must also add a resolver case inside `resolveStanceSkill()` (just below the table) that returns the right skill id for your stance.
 
+> **`block` is special.** It is no longer any stance's target skill — the deprecated Fortifier used to map to it. Block now receives a bonus from the **Fortified** state (shield + 1H melee) via the effectiveness system, *not* from a stance mapping — and that bonus **scales with the player's own Block skill** (+2 → +20 over the same ramp as the effectiveness bonus). Don't map a new stance to `block` expecting the old behavior; if you want a shield-driven Block bonus, that already exists (§8).
+
 > **Want NO skill bonus?** Omit the stance from this table entirely. `resolveStanceSkill` returns `nil` and no bonus is ever applied (this is exactly how Twirler is configured to grant no effectiveness bonus).
 
 ### How the bonus is delivered (you don't write this, but know it)
@@ -110,9 +113,9 @@ For a vanilla skill already in the list (like `bluntweapon`), there's nothing ex
 
 ---
 
-## 3. Add a detection classifier — `init.lua`
+## 3. Add a detection classifier — `player/resolver.lua`
 
-If your stance keys off a weapon **type** that no existing helper covers, write a small classifier near the other `is…` functions (lines ~478–710). They all take a record and return a boolean:
+If your stance keys off a weapon **type** that no existing helper covers, write a small classifier in `player/resolver.lua`, near the other `is…` functions (everything from `isBowOrCrossbow` down to `isFelthorn` lives there). They all take a record and return a boolean:
 
 ```lua
 local function isFlail(weaponRec)
@@ -135,20 +138,21 @@ MarksmanBow         MarksmanCrossbow   MarksmanThrown
 
 Note there is **no "ShortBladeTwoHand"** — any two-handed blade is `LongBladeTwoHand`. (This is why GRIP-converted shortswords need special handling; see the Zweihänder branch.)
 
-If your stance keys off something other than weapon type — an equipped tool, a record-id prefix, an off-hand item — model it on the existing helpers: `isReforgerWeapon` (literal record id), `isFelthorn` (record-id prefix scan), `hasLockpickOrProbeEquipped` (equipment-slot read), `isDualWielding` (integration event state).
+If your stance keys off something other than weapon type — an equipped tool, a record-id prefix, an off-hand item — model it on the existing helpers: `isReforgerWeapon` (literal record id), `isFelthorn` (record-id prefix scan), `hasLockpickOrProbeEquipped` (equipment-slot read), `isApothecaryWeapon` / `isVeneficVialWeapon` (thrown-item record id) — all in `resolver.lua`. Two helpers live elsewhere and reach the resolver through its ctx: `isDualWielding` (init.lua — it reads the persisted dual-wield flags) and the off-hand shield check (`getEquippedShield`, in `player/prefixes.lua`). If your classifier needs state owned by init.lua, follow the `isDualWielding` pattern: forward-declare the local in init.lua, pass a closure in the resolver's ctx table, and bind it from `ctx` at the top of `M.new`.
 
 If an existing helper already identifies your weapon (e.g. you just want "any axe"), reuse it — no new classifier needed.
 
 ---
 
-## 4. Insert the resolver branch — `init.lua`
+## 4. Insert the resolver branch — `player/resolver.lua`
 
-Inside `resolveStance(now)`, add your branch **at the correct priority**. The branches are numbered in comments (1–19). Placement is everything:
+Inside `resolveStance(now)`, add your branch **at the correct priority**. The branches are numbered in comments (1–20; #11 is now just an explanatory note where Fortifier used to be). Placement is everything:
 
 - More **specific** rules go **above** more general ones. Flailman (specific blunt subtype) must come **before** Mjolnir (all blunt weapons), or Mjolnir will swallow every flail.
+- A special item / tool that is technically a common weapon type goes **above** that type's branch — the way Angler (pole), Apothecary (thrown alchemy), Pitmen (Miner's Pick), and throwing-axe→Axeman all sit just above the broad branch they would otherwise hit.
 - Conversely, broad fallbacks (Commoner, Brawler) stay near the bottom.
 
-For Flailman, place it just **above** the Mjolnir branch (priority 15):
+For Flailman, place it just **above** the Mjolnir branch:
 
 ```lua
 -- 14.5) Flailman: flail-type blunt weapon. Above Mjolnir so a flail
@@ -159,8 +163,6 @@ if effRec and isFlail(effRec) then
 end
 
 -- 15) Mjolnir: blunt one-handed or blunt two-handed close...
-if effRec and not isReforgerWeapon(right, effRec) and isBluntMjolnir(effRec) then
-    ...
 ```
 
 Guidelines:
@@ -229,7 +231,7 @@ Perks come in two flavors. Both live in `perks.lua` and both gate on the **core*
 
 ### 7a. Passive stat perks (attributes / skills)
 
-These are reconciled every tick by `computeDesiredAttrContribs()` (attributes) and `computeDesiredSkillContribs()` (skills). Add a block keyed on your stance id. Example — Flailman's perks that boost attributes:
+These are reconciled every tick by `computeDesiredAttrContribs()` (attributes) and `computeDesiredSkillContribs()` (skills). Add a block keyed on your stance id:
 
 ```lua
 -- in computeDesiredAttrContribs(), alongside the other stance blocks:
@@ -247,7 +249,7 @@ if perkActive('flailman', 50) then d.bluntweapon = d.bluntweapon + 5 end
 
 The contribution system uses **delta accounting** — you declare the *desired total* and the engine reconciles it. Don't write `.modifier` directly; let the loop do it. (This is what keeps bonuses from drifting across save/load and from fighting other mods.)
 
-> **Important:** if another mod owns a vanilla skill's modifier (the way **Throwing!** owns Marksman), do **not** also write that skill from a perk — you'll get a tug-of-war. Route around it the way the effectiveness system cedes Marksman to Throwing!.
+> **Important:** if another mod owns a vanilla skill's modifier (the way **Throwing!** owns Marksman, or the way the **Fortified** state now owns the shield-driven slice of Block), don't *also* write that skill from a perk — you'll get a tug-of-war. Route around it the way the effectiveness system cedes Marksman to Throwing!.
 
 ### 7b. Active on-hit perks
 
@@ -269,7 +271,54 @@ Damage multipliers, attack-speed, armor-bypass and similar are applied through t
 
 ---
 
-## 8. Test
+## 8. How the name prefixes interact with your stance
+
+Stance! decorates the **active** stance's displayed name (HUD, tooltip, and the live character-sheet row) with up to three transient prefixes, composed outermost-first as **Sneaky → Fortified → element → base** (e.g. `Sneaky Fortified Blazed Soloist`). They are applied *after* resolution, in `formatStanceName(stanceId)` — the whole prefix system lives in **`player/prefixes.lua`**. For a new stance you usually do **nothing** — but you should make two deliberate decisions, and you *can* add a prefix of your own.
+
+### 8a. The three built-in prefixes
+
+| Prefix | Source | Scope | Mechanical effect |
+|---|---|---|---|
+| **Sneaky** | player crouched (`self.controls.sneak`), via `refreshSneaky()` | **every** stance | none (cosmetic) |
+| **Fortified** | shield + 1H melee, via `refreshFortified()` | stances in `FORTIFIABLE_STANCES` | additive **Block** bonus, scaled by the player's own Block skill (+2 → +20) |
+| **Blazed / Frozen / Electrified** | Spellsword imbue (`IW_ActiveSpell`), via `refreshImbuePrefix()` | every stance **except** those in `NON_IMBUABLE_STANCES` | none (cosmetic) |
+
+### 8b. Two decisions for your new stance
+
+Both are small allow/deny sets in `player/prefixes.lua`, declared *before* `formatStanceName` so it captures them as upvalues:
+
+- **Imbuable?** A new stance is imbuable **by default** (it will show `Blazed/Frozen/Electrified` when Spellsword imbues the weapon). Add it to **`NON_IMBUABLE_STANCES`** only if it has no real, imbuable weapon — that set is exactly Arcanist (a readied spell), Commoner (sheathed/empty), Locksmith (lockpick/probe), and Reforger (repair hammer). Flailman wields a flail, so leave it out (imbuable).
+- **Fortifiable?** A new stance gets the **Fortified** prefix and Block bonus **only if** you add it to **`FORTIFIABLE_STANCES`** — and you should add it *only* if it is a genuine one-handed melee stance that can be paired with a shield (the current members are Soloist, Thief, Mjolnir, Axeman, Blademeister). A flail is a one-handed melee weapon, so Flailman *could* join:
+
+  ```lua
+  local FORTIFIABLE_STANCES = {
+      soloist = true, thief = true, mjolnir = true,
+      axeman = true, blademeister = true,
+      flailman = true,   -- a flail is a one-handed melee weapon, shield-compatible
+  }
+  ```
+
+  Leave it out for any two-handed, ranged, thrown, dual-wield, unarmed, or non-combat stance — a shield can't accompany those, so "Fortified" would be meaningless.
+
+### 8c. Adding a brand-new prefix (advanced, optional)
+
+If your stance (or a global condition) warrants its own prefix, mirror the Sneaky pattern — it's the simplest of the three:
+
+1. In `player/prefixes.lua`, declare a cached flag **before** `formatStanceName`: `local myPrefixActive = false`.
+2. Add a branch in `formatStanceName`, in the composition order you want (outermost branches run last):
+   ```lua
+   if myPrefixActive and <applies to this stanceId> then
+       name = 'MyPrefix ' .. name
+   end
+   ```
+3. Write a `refreshMyPrefix()` that sets the flag from whatever state drives it (read defensively, gate on a setting). Export it from the module's return table, re-bind it in init.lua next to the other `prefixes.*` rebinds, and call it once per tick in init.lua's `onUpdate` next to `refreshSneaky()` / `refreshFortified()` — *before* the HUD/tooltip render so it shows the same tick. If the refresh needs state owned by init.lua, take it through `ctx` (the way `getActiveStance` is injected) rather than reaching for a global.
+4. If it should be toggleable, add an `enableMyPrefix` checkbox (Stances group), mirror it in `SYNCED_KEYS`, and add the l10n strings — exactly like `enableSneaky`.
+
+Keep cosmetic prefixes cosmetic; if a prefix also grants a mechanical bonus (the way Fortified grants Block), apply that bonus through the same delta-accounted channel the effectiveness system uses, never by writing a modifier directly — and if the bonus should scale, prefer scaling off a **base** stat the way `currentFortifiedBlockBonus` reads Block's *base* (its own output lands in the *modifier*, so reading `modified` would feed the bonus back into itself).
+
+---
+
+## 9. Test
 
 1. **Load order:** Stance! after Skill Framework, plus any integration mods your stance needs.
 2. In-game, open the console and run `stance list` — your stance should appear with its level, bonus, target skill, and `on/off` state.
@@ -277,6 +326,7 @@ Damage multipliers, attack-speed, armor-bypass and similar are applied through t
 4. `stance set flailman 100` and re-check — bonus should read `+20`.
 5. `stance set core 25/50/75/100` and verify each perk tier unlocks (watch the unlock popup and the tooltip's perk list).
 6. Equip a *neighboring* weapon type and confirm your stance does **not** steal it (priority check), and that the previously-correct stance still wins.
+7. If you opted into `FORTIFIABLE_STANCES`, equip a shield and confirm the name reads `Fortified <Stance>` and Block rises; if you left it imbuable, imbue the weapon (Spellsword) and confirm the element prefix appears. Crouch and confirm `Sneaky` prepends.
 
 ---
 
@@ -287,15 +337,16 @@ Per new stance id `myStance`:
 - [ ] **`config.lua`** — entry in `stances` with `id`, `displayName`, `attribute`, `description`, `integrations`, `category`, and four perks at 25/50/75/100.
 - [ ] **`init.lua` `STANCE_SKILL_TARGET`** — target skill (or omit for no bonus; or `dynamic = true` + a `resolveStanceSkill` case).
 - [ ] **`player/skill_framework.lua`** — if the target is a vanilla skill not already in `VANILLA_EFF_SKILLS`, add it (or for a modded skill, add to `MODDED_EFF_SKILLS`).
-- [ ] **`init.lua`** — a classifier (`isMyStance`) if no existing helper fits.
-- [ ] **`init.lua` `resolveStance`** — a branch at the correct priority, gated through `pick`.
+- [ ] **`player/resolver.lua`** — a classifier (`isMyStance`) if no existing helper fits.
+- [ ] **`player/resolver.lua` `resolveStance`** — a branch at the correct priority, gated through `pick`.
 - [ ] **`init.lua` `STANCE_SETTING_KEY`** — `myStance = 'enableMyStance'`.
 - [ ] **`init.lua` `PERK_SETTING_KEY`** — `myStance = 'enableMyStancePerks'`.
 - [ ] **`init.lua` `SYNCED_KEYS`** — both `{ 'Stances', 'enableMyStance' }` and `{ 'Perks', 'enableMyStancePerks' }`.
+- [ ] **`player/prefixes.lua` prefix sets** — decide imbuable (leave out of `NON_IMBUABLE_STANCES`, or add it) and fortifiable (add to `FORTIFIABLE_STANCES` only if 1H-melee shield-compatible). See §8.
 - [ ] **`settings.lua`** — enable checkbox in Stances group, perk checkbox in Perks group.
 - [ ] **`l10n/Stance/en.yaml`** — `SettingEnableMyStance`, `...Description`, `SettingEnableMyStancePerks`, `...Description`.
 - [ ] **`perks.lua`** — perk logic in `computeDesiredAttrContribs` / `computeDesiredSkillContribs` / `Perks.onHit` as needed (and add any new skill id to `SKILL_NAMES`).
-- [ ] **Test** the six points above.
+- [ ] **Test** the seven points above.
 
 ---
 
@@ -303,15 +354,20 @@ Per new stance id `myStance`:
 
 | Concern | File |
 |---|---|
-| Stance definitions, perk ladders, leveling numbers, integration specs | `config.lua` |
-| Detection, resolver priority, classifiers, registration tables, console, event wiring | `init.lua` |
-| Effectiveness skill-bonus application (vanilla native + modded SF) | `player/skill_framework.lua` |
+| Stance definitions, perk ladders, leveling numbers, integration specs, UI defaults | `config.lua` |
+| Orchestration: persisted state (XP/levels, dual-wield flags), registration tables (`STANCE_SKILL_TARGET`, `STANCE_SETTING_KEY`, `PERK_SETTING_KEY`, `SYNCED_KEYS`), `resolveStanceSkill`, module construction, the update loop, save/load, event wiring | `init.lua` |
+| Weapon classifiers + the `resolveStance` priority waterfall (constructs `player/grip.lua` internally) | `player/resolver.lua` |
+| The name prefixes (imbue / Fortified / Sneaky), `formatStanceName`, the Block-scaled Fortified bonus, prefix tooltip notes | `player/prefixes.lua` |
+| Per-stance Sanctuary (evasion) bonus | `player/evasion.lua` |
+| External-mod XP event handlers (mining, fishing, lockpicking, hazards, barter, disenchant, transcribe, talking, knockouts, parries) | `player/integrations_xp.lua` |
+| Skill registration, effectiveness skill-bonus application (vanilla native + modded SF), Fortified Block bonus delivery, live stats-window name sync | `player/skill_framework.lua` |
 | Perk effects, attribute/skill contributions, on-hit dispatch | `perks.lua` |
-| Settings page (the ten groups) | `settings.lua` |
+| Settings page (the nine groups) | `settings.lua` |
 | UI text for settings | `l10n/Stance/en.yaml` |
-| HUD indicator, GRIP lookups, XP banking, console internals, stat accessors | `player/hud.lua`, `player/grip.lua`, `player/xp.lua`, `player/console.lua`, `player/stat_access.lua` |
-| Global-scope kill relay, settings mirror, perk-effect application | `global.lua` |
+| HUD indicator, GRIP lookups, XP banking, console internals, stat accessors, Felthorn ambient lines | `player/hud.lua`, `player/grip.lua`, `player/xp.lua`, `player/console.lua`, `player/stat_access.lua`, `player/felthorn_voice.lua` |
+| Global-scope kill relay, settings mirror, integration-event relays, perk-effect application | `global.lua` |
 | Victim-side hit/kill reporting (NPCs & creatures) | `victim.lua` |
+| Deployable-hazard listener (traps & burning oil → stance credit) | `hazard.lua` |
 
 ---
 
@@ -320,6 +376,7 @@ Per new stance id `myStance`:
 - **One canonical id.** Pick the stance id once and use it identically in every table. Most "my stance does nothing" bugs are a typo'd or missing id in one of the five registration tables.
 - **Specific beats general in the resolver.** If your weapon is a subtype of an existing category, your branch goes above the category's branch.
 - **Never write stat modifiers directly from perks.** Use the contribution tables so delta accounting handles save/load and multi-mod stacking.
-- **Cede shared vanilla skills.** If another mod actively rewrites a vanilla skill's modifier, don't fight it — route your bonus elsewhere or let that mod mirror it.
+- **Cede shared vanilla skills.** If another mod actively rewrites a vanilla skill's modifier, don't fight it — route your bonus elsewhere or let that mod mirror it. (Block's shield-driven slice is owned by the Fortified state; Marksman by Throwing!.)
 - **Four perks, at 25/50/75/100, gated on core level.** Keep to the established cadence so the perk UI and notifications behave.
 - **Degrade gracefully.** If your stance leans on an integration, guard every integration call so the stance still works (minus the integration-specific perks) when the mod is absent.
+- **Prefixes are decoration, not state.** A new stance is automatically Sneaky-eligible and imbuable; only opt into Fortifiable when it's truly a one-handed melee stance. If you add a new prefix, follow the cached-flag + per-tick-refresh + `formatStanceName`-branch pattern (§8c).
