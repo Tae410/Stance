@@ -1,5 +1,0 @@
-MENU: scripts/stance/settings.lua
-PLAYER: scripts/stance/init.lua
-GLOBAL: scripts/stance/global.lua
-NPC, CREATURE: scripts/stance/victim.lua
-ACTIVATOR, LIGHT: scripts/stance/hazard.lua
