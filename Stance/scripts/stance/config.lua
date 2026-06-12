@@ -128,9 +128,9 @@ local config = {
     -- The values below are the design defaults; tune freely. Light/Medium/Heavy
     -- map 1:1 to the three vanilla armor weight classes.
     brawlerGauntlet = {
-        light  = { hhBonus = 2.5, speedDebuff = 0.15 },
-        medium = { hhBonus = 5.0, speedDebuff = 0.25 },
-        heavy  = { hhBonus = 7.5, speedDebuff = 0.35 },
+        light  = { hhBonus = 1.5, speedDebuff = 0.15 },
+        medium = { hhBonus = 2.5, speedDebuff = 0.25 },
+        heavy  = { hhBonus = 3.5, speedDebuff = 0.35 },
         -- Defensive floor on the resulting speed multiplier so a re-tune (or a
         -- mod-raised debuff) can never freeze unarmed attacks at 0× speed.
         minSpeedMult = 0.10,
