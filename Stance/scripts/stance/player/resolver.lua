@@ -444,6 +444,76 @@ function M.new(ctx)
         return false
     end
 
+    -- Forager stance detection: the Gardening and Farming mod (TribalLu) adds
+    -- 11 tool/weapon records, split into two functional families. Detection
+    -- mirrors the Angler / Apothecary / Pitmen pattern — match the equipped
+    -- object's record id (and the GRIP-resolved original, if any) against the
+    -- fixed sets below, rather than the weapon's type field, because the tools
+    -- span several underlying weapon types (axe, blunt, short blade, spear) and
+    -- we do NOT want Axeman / Mjolnir / Thief / Guisarmier to steal them. The ids
+    -- are the exact record NAMEs from GardeningandFarming.esp, lower-cased here
+    -- because OpenMW record ids compare case-insensitively.
+    --
+    --   GARDENING family (plant-tending tools) → the gardening perk set:
+    --     Gardening Hammer / Shovel / Shears / Waterskin / Waterskin (Large).
+    --   HARVESTING family (gathering tools + the four combat Farming Scythes) →
+    --     the harvesting perk set: Harvest Hoe / Harvest Scythe and the
+    --     Imperial / Ivory / Glass / Daedric Farming Scythes.
+    local FORAGER_GARDENING_IDS = {
+        ['trib_tool_hammer']     = true,  -- Gardening Hammer    (blunt 1H)
+        ['trib_tool_shovel']     = true,  -- Gardening Shovel    (spear)
+        ['trib_tool_shears']     = true,  -- Gardening Shears    (short blade)
+        ['trib_waterskin']       = true,  -- Gardening Waterskin (short blade)
+        ['trib_waterskin_large'] = true,  -- Gardening Waterskin (Large)
+    }
+    local FORAGER_HARVESTING_IDS = {
+        ['trib_garden_hoe']      = true,  -- Harvest Hoe          (axe 2H)
+        ['trib_farm_scythe']     = true,  -- Harvest Scythe       (axe 2H)
+        ['trib_scythe_imperial'] = true,  -- Imperial Farming Scythe
+        ['trib_scythe_ivory']    = true,  -- Ivory Farming Scythe
+        ['trib_scythe_glass']    = true,  -- Glass Farming Scythe
+        ['trib_scythe_daedric']  = true,  -- Daedric Farming Scythe
+    }
+
+    -- Subtype for a given record id: 'gardening' | 'harvesting' | nil. Checks the
+    -- literal id first, then the GRIP-resolved original (a GRIP-converted tool may
+    -- carry a generated id). Returns nil for anything that isn't a Forager weapon.
+    local function foragerSubtypeForId(recordId)
+        if type(recordId) ~= 'string' then return nil end
+        local lid = recordId:lower()
+        if FORAGER_GARDENING_IDS[lid]  then return 'gardening'  end
+        if FORAGER_HARVESTING_IDS[lid] then return 'harvesting' end
+        local orig = gripOriginalRecordId(recordId)
+        if orig then
+            orig = orig:lower()
+            if FORAGER_GARDENING_IDS[orig]  then return 'gardening'  end
+            if FORAGER_HARVESTING_IDS[orig] then return 'harvesting' end
+        end
+        return nil
+    end
+
+    -- True when the equipped right-hand weapon is any Forager tool/weapon.
+    local function isForagerWeapon(weaponObj, weaponRec)
+        if not weaponObj or not weaponRec then return false end
+        local currentId = nil
+        pcall(function() currentId = weaponObj.recordId end)
+        return foragerSubtypeForId(currentId) ~= nil
+    end
+
+    -- Live query of the active Forager weapon subtype, for the perk-set switch.
+    -- Reads the CURRENT right-hand weapon and returns 'gardening' | 'harvesting',
+    -- or nil when no Forager weapon is equipped. Consumed (via init.lua's injected
+    -- closure) by the perk-display accessor and the perk-effect gating in perks.lua,
+    -- so the displayed perk ladder and the applied perk effects both follow the
+    -- weapon currently in hand.
+    local function getActiveForagerSubtype()
+        local right = getRightHandWeapon()
+        if not right then return nil end
+        local currentId = nil
+        pcall(function() currentId = right.recordId end)
+        return foragerSubtypeForId(currentId)
+    end
+
     -- Lockpick / probe equip check for the Locksmith stance.
     --
     -- The player only needs ONE of (lockpick OR probe) readied in the right hand.
@@ -725,6 +795,13 @@ function M.new(ctx)
             local r = pick('dualist'); if r then return r end
         end
 
+        -- 11b) Forager: any Gardening and Farming tool/weapon (record-id match),
+        --      above the weapon-type branches its tools would otherwise hit
+        --      (Guisarmier/Axeman/Mjölnir/Thief), mirroring the live resolver.
+        if right and effRec and isForagerWeapon(right, effRec) then
+            local r = pick('forager'); if r then return r end
+        end
+
         -- 12) Guisarmier: spear.
         if effRec and isSpear(effRec) then
             local r = pick('guisarmier'); if r then return r end
@@ -934,6 +1011,19 @@ function M.new(ctx)
         --     and gets no Fortified prefix or bonus — "Fortified" requires a
         --     compatible weapon.)
 
+        -- 11b) Forager: any Gardening and Farming tool/weapon, matched by record
+        --      id. Sits here — above Guisarmier (spear) and the other weapon-type
+        --      branches — because the Forager weapons span axe / blunt / short
+        --      blade / spear types; a record-level match must claim them before
+        --      Guisarmier (the Gardening Shovel is a spear), Axeman (the scythes
+        --      and Harvest Hoe are axes), Mjölnir (the Gardening Hammer is blunt)
+        --      or Thief (the Shears / Waterskins are short blades) can intercept.
+        --      Falls through to those type branches when Forager is disabled.
+        if right and effRec and isForagerWeapon(right, effRec) then
+            local r = pick('forager', 'gardening/harvesting tool equipped')
+            if r then return r end
+        end
+
         -- 12) Guisarmier: spear (SpearTwoWide). Comes before Zweihänder so a
         --     spear's classification is unambiguous. (A spear is two-handed, so the
         --     effectively-impossible spear-plus-shield case does not arise.)
@@ -1026,6 +1116,7 @@ function M.new(ctx)
         isOneHandedMelee      = isOneHandedMelee,
         effectiveWeaponRecord = effectiveWeaponRecord,
         runtimeWeaponRecord   = runtimeWeaponRecord,
+        getActiveForagerSubtype = getActiveForagerSubtype,
     }
 end
 

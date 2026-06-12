@@ -1,19 +1,35 @@
 --[[
-    Stance! — HUD indicator + perk-feedback popups (player/hud.lua)
+    Stance! — HUD indicator (icon + name) + perk-feedback popups (player/hud.lua)
 
     Owns everything the player sees as non-diegetic UI:
-      * Draggable stance-name HUD text element on the 'Modal' layer.
+      * Draggable stance INDICATOR on the 'Modal' layer. The indicator is a
+        vertical stack: a top row holding the active stance's icon (a .dds from
+        icons/Stance/) followed by a small icon for each active name-prefix
+        decoration (Spellsword imbue, Fortified, Sneaky) rendered BESIDE the
+        stance icon, and — optionally — the stance name (carrying the same
+        prefixes) beneath it. The prefix icons mirror the name decorations, so
+        the two always agree. Icon size is configurable; the prefix icons and
+        the name scale with it. If a stance has no icon, or the texture fails to
+        load, the indicator degrades gracefully to a name-only label so it is
+        never blank.
       * In-house perk-unlock notification popups (or vanilla ui.showMessage
         routing), with configurable position, duration, and stack limit.
       * `notify(text)` — the single entry-point for all stance-progression
-        messages (level-ups, perk unlocks). init.lua should route every
+        messages (level-ups, perk unlocks). init.lua routes every
         player-visible message through this.
 
-    The HUD element lives on the 'Modal' layer (same as Toxicology) so it
-    only receives mouse events when the cursor is visible. Dragging is gated
-    on `canDragHud()`, which returns true only in inventory-like UI modes.
-    Stored X/Y pixel coordinates live in the 'HUD' settings section; an
-    unconfigured position defaults to the relative lower-left corner.
+    The indicator lives on the 'Modal' layer (same as Toxicology) so it only
+    receives mouse events when the cursor is visible. Dragging is gated on
+    `canDragHud()`, which returns true only in inventory-like UI modes. Stored
+    X/Y pixel coordinates live in the 'HUD' settings section; an unconfigured
+    position defaults to the relative lower-left corner.
+
+    The icon is resolved from the stance config's `icon` field (a VFS path,
+    e.g. 'icons/Stance/Arcanist.dds'). Textures are created once via
+    ui.texture and cached by path. The indicator element is only rebuilt when
+    its visible content actually changes (stance, icon presence, name,
+    name-visibility, or icon size) — the common per-tick path is a cheap
+    position refresh, with name-only changes patched in place.
 
     Dependencies (injected via ctx):
         ui           — openmw.ui
@@ -25,19 +41,7 @@
         settingSection — function(groupSuffix) → storage section
         getActiveStance  — function() → activeStanceId (string|nil)
         getStanceConfig  — function(stanceId) → stance table | nil
-
-    Construction (in init.lua, after the HUD section's original position):
-        local hud = require('scripts.stance.player.hud').new({
-            ui             = ui,
-            util           = util,
-            core           = core,
-            async          = async,
-            I              = I,
-            readSetting    = readSetting,
-            settingSection = settingSection,
-            getActiveStance = function() return activeStanceId end,
-            getStanceConfig = getStanceConfig,
-        })
+        formatStanceName — function(stanceId) → decorated display name
 
     The returned API matches the former init.lua locals exactly:
         hud.updateHud()
@@ -66,18 +70,73 @@ function M.new(ctx)
     local formatStanceName = ctx.formatStanceName or function(id)
         local s = getStanceConfig(id); return (s and s.displayName) or 'Unknown'
     end
+    -- Ordered VFS icon paths for the name-prefix decorations active on the current
+    -- stance (Sneaky / Fortified / Spellsword imbue). Mirrors the same conditions
+    -- that decorate the stance NAME, so the icons and the name always agree. The
+    -- icons are rendered in a row beside the stance icon (see buildChildren).
+    local getActivePrefixIcons = ctx.getActivePrefixIcons or function() return {} end
 
     -- ── HUD state ─────────────────────────────────────────────────────────
 
-    local hudElement     = nil
-    local currentUiMode  = nil
+    local hudElement       = nil
+    local currentUiMode    = nil
+    local currentStructSig = nil   -- structural signature of what's on screen
+    local currentName      = nil   -- last name text rendered (for in-place patch)
+    local textureCache     = {}    -- [vfsPath] = TextureResource | false (load failed)
 
     -- Relative defaults — used only when the player hasn't explicitly placed
-    -- the HUD anywhere yet. Lower-left feels least intrusive to combat.
+    -- the indicator anywhere yet. Lower-left feels least intrusive to combat.
     local HUD_DEFAULT_X_REL = 0.04
     local HUD_DEFAULT_Y_REL = 0.94
 
-    -- ── HUD helpers ───────────────────────────────────────────────────────
+    -- Gold-on-black to match the rest of the mod's UI.
+    local NAME_TEXT_COLOR   = util.color.rgb(0.92, 0.85, 0.55)
+    local NAME_SHADOW_COLOR = util.color.rgb(0, 0, 0)
+    local ICON_TINT         = util.color.rgb(1, 1, 1)
+    -- Center children horizontally (cross axis) when the enum is available;
+    -- if not, the key is simply absent and the engine defaults to Start.
+    local CENTER_ALIGN      = (ui.ALIGNMENT and ui.ALIGNMENT.Center) or nil
+
+    -- ── Prefix icons (rendered beside the stance icon) ────────────────────
+    -- The active name-prefix decorations (Sneaky / Fortified / Spellsword imbue)
+    -- are shown as small icons in a horizontal row immediately to the RIGHT of
+    -- the stance icon — not overlaid inside it. Their VFS paths come from
+    -- prefixes.getActivePrefixIcons(); each is loaded (and cached) through the
+    -- same textureFor() path as the stance icons, so a missing/failed texture
+    -- simply means that one icon is skipped — the matching name prefix still
+    -- shows regardless. Sizing is a fraction of the stance icon so they read as
+    -- secondary indicators; tweak the fraction here to taste.
+    local PREFIX_ICON_FRAC     = 0.66   -- prefix icon edge as a fraction of the stance icon edge
+    local PREFIX_ICON_MIN      = 14     -- ...but never smaller than this (px)
+    local PREFIX_ICON_GAP_FRAC = 0.10   -- horizontal gap before each prefix icon, fraction of icon edge
+    local PREFIX_ICON_GAP_MIN  = 2      -- ...minimum gap (px)
+
+    -- ── Sizing ────────────────────────────────────────────────────────────
+
+    -- The on-screen pixel size of the stance icon. Reuses the existing
+    -- 'hudIndicatorIconSize' setting (whose key always implied an icon).
+    local function hudIconSize()
+        local v = tonumber(readSetting('HUD', 'hudIndicatorIconSize', 48)) or 48
+        if v < 8  then v = 8  end
+        if v > 96 then v = 96 end
+        return math.floor(v)
+    end
+
+    -- Name label size, derived from the icon size so a single knob governs the
+    -- whole indicator, but clamped so the name stays readable at any icon size.
+    local function nameTextSize(iconPx)
+        local v = math.floor(iconPx * 0.46 + 0.5)
+        if v < 12 then v = 12 end
+        if v > 28 then v = 28 end
+        return v
+    end
+
+    local function showStanceName()
+        if readSetting('HUD', 'hudShowStanceName', true) then return true end
+        return false
+    end
+
+    -- ── Position helpers ──────────────────────────────────────────────────
 
     local function hudLayerSize()
         local ok, layerId = pcall(function() return ui.layers.indexOf('HUD') end)
@@ -85,13 +144,6 @@ function M.new(ctx)
             return ui.layers[layerId].size
         end
         return util.vector2(1280, 720)
-    end
-
-    local function hudTextSize()
-        local v = tonumber(readSetting('HUD', 'hudIndicatorIconSize', 22)) or 22
-        if v < 8  then v = 8  end
-        if v > 96 then v = 96 end
-        return v
     end
 
     local function clampHudPosition(pos)
@@ -119,6 +171,8 @@ function M.new(ctx)
         uiSettings:set('hudIndicatorY', clamped.y)
         return clamped
     end
+
+    -- ── UI-mode / drag gating ─────────────────────────────────────────────
 
     local function isInventoryLikeMode(mode)
         -- Same mode list Toxicology uses.
@@ -149,70 +203,184 @@ function M.new(ctx)
 
     local function destroyHud()
         if hudElement then hudElement:destroy(); hudElement = nil end
+        currentStructSig = nil
+        currentName      = nil
     end
 
-    local function ensureHud()
-        if hudElement then return hudElement end
+    -- ── Texture / icon resolution ─────────────────────────────────────────
+
+    local function textureFor(path)
+        if not path or path == '' then return nil end
+        local cached = textureCache[path]
+        if cached ~= nil then
+            return cached or nil
+        end
+        local ok, tex = pcall(function() return ui.texture { path = path } end)
+        if ok and tex then
+            textureCache[path] = tex
+            return tex
+        end
+        -- Remember the failure so we don't retry every tick.
+        textureCache[path] = false
+        return nil
+    end
+
+    local function iconPathFor(stanceId)
+        local s = getStanceConfig(stanceId)
+        return s and s.icon or nil
+    end
+
+    -- ── Indicator construction ────────────────────────────────────────────
+
+    local function rootLayout()
+        return hudElement and hudElement.layout
+    end
+
+    -- Drag handlers operate on the root (Flex) layout. Child mouse events
+    -- propagate up to the root, so dragging works anywhere on the indicator.
+    local function hudMousePress(data, _)
+        if not data or data.button ~= 1 or not canDragHud() then return end
+        local layout = rootLayout()
+        if not layout then return end
+        layout.userData = layout.userData or {}
+        layout.userData.dragging = true
+        layout.userData.lastMousePos = data.position
+    end
+
+    local function hudMouseRelease(_, _)
+        local layout = rootLayout()
+        if layout and layout.userData then
+            layout.userData.dragging = false
+            layout.userData.lastMousePos = nil
+        end
+    end
+
+    local function hudMouseMove(data, _)
+        local layout = rootLayout()
+        if not data or not layout or not layout.userData
+            or not layout.userData.dragging or not layout.userData.lastMousePos then return end
+        if not canDragHud() then
+            layout.userData.dragging = false
+            layout.userData.lastMousePos = nil
+            return
+        end
+        local delta = data.position - layout.userData.lastMousePos
+        layout.userData.lastMousePos = data.position
+        local currentPosition = layout.props.position or hudPosition()
+        layout.props.position = storeHudPosition(currentPosition + delta)
+        hudElement:update()
+    end
+
+    -- Build the child layouts for the indicator: [icon-row?] then [name?].
+    -- The name is shown when the toggle is on OR when there is no icon (so the
+    -- indicator is never empty). When `prefixTexes` is a non-empty list (one or
+    -- more active prefix decorations AND a stance icon is present), the stance
+    -- icon and the prefix icons are laid in a horizontal Flex row, so the prefix
+    -- icons sit BESIDE the stance icon rather than overlaid inside it. With no
+    -- prefixes the stance icon is added bare, exactly as before, so the common
+    -- case is unchanged. The name row below is unaffected either way.
+    local function buildChildren(tex, iconPx, nameText, showName, prefixTexes)
+        local children = {}
+        if tex then
+            local stanceIcon = {
+                type = ui.TYPE.Image,
+                name = 'StanceIcon',
+                props = {
+                    resource = tex,
+                    size     = util.vector2(iconPx, iconPx),
+                    color    = ICON_TINT,
+                    visible  = true,
+                },
+            }
+            if prefixTexes and #prefixTexes > 0 then
+                -- Prefix icons are smaller secondary indicators, vertically centred
+                -- against the stance icon, each preceded by a small spacer so they
+                -- don't abut. The row autoSizes, so the indicator simply grows
+                -- wider when prefixes are active.
+                local prefixPx = math.floor(iconPx * PREFIX_ICON_FRAC + 0.5)
+                if prefixPx < PREFIX_ICON_MIN then prefixPx = PREFIX_ICON_MIN end
+                if prefixPx > iconPx          then prefixPx = iconPx          end
+                local gap = math.floor(iconPx * PREFIX_ICON_GAP_FRAC + 0.5)
+                if gap < PREFIX_ICON_GAP_MIN then gap = PREFIX_ICON_GAP_MIN end
+
+                local row = { stanceIcon }
+                for i, ptex in ipairs(prefixTexes) do
+                    row[#row + 1] = {
+                        type = ui.TYPE.Widget,
+                        name = 'PrefixGap' .. i,
+                        props = { size = util.vector2(gap, 1), visible = true },
+                    }
+                    row[#row + 1] = {
+                        type = ui.TYPE.Image,
+                        name = 'PrefixIcon' .. i,
+                        props = {
+                            resource = ptex,
+                            size     = util.vector2(prefixPx, prefixPx),
+                            color    = ICON_TINT,
+                            visible  = true,
+                        },
+                    }
+                end
+
+                local rowProps = {
+                    horizontal = true,
+                    autoSize   = true,
+                    visible    = true,
+                }
+                -- Center children on the cross (vertical) axis so the smaller
+                -- prefix icons line up with the middle of the stance icon.
+                if CENTER_ALIGN ~= nil then rowProps.arrange = CENTER_ALIGN end
+
+                children[#children + 1] = {
+                    type    = ui.TYPE.Flex,
+                    name    = 'IconRow',
+                    props   = rowProps,
+                    content = ui.content(row),
+                }
+            else
+                children[#children + 1] = stanceIcon
+            end
+        end
+        if showName or not tex then
+            children[#children + 1] = {
+                type = ui.TYPE.Text,
+                name = 'StanceName',
+                props = {
+                    text            = nameText or '',
+                    textSize        = nameTextSize(iconPx),
+                    textColor       = NAME_TEXT_COLOR,
+                    textShadow      = true,
+                    textShadowColor = NAME_SHADOW_COLOR,
+                    visible         = true,
+                },
+            }
+        end
+        return children
+    end
+
+    local function buildHud(tex, iconPx, nameText, showName, prefixTexes)
+        destroyHud()
+
+        local props = {
+            horizontal = false,            -- vertical column: icon over name
+            autoSize   = true,             -- size to fit children
+            position   = hudPosition(),
+            -- Anchor (0,1) → position points at the indicator's bottom-left
+            -- corner, matching the historical text-label placement so stored
+            -- drag positions stay valid.
+            anchor     = util.vector2(0, 1),
+            visible    = true,
+        }
+        if CENTER_ALIGN ~= nil then props.arrange = CENTER_ALIGN end
 
         hudElement = ui.create {
-            -- Modal layer so mouse events route here when the cursor is up.
-            layer = 'Modal',
-            type = ui.TYPE.Text,
-            name = 'StanceHudIndicator',
-            props = {
-                text = '',
-                textSize = hudTextSize(),
-                textColor = util.color.rgb(0.92, 0.85, 0.55),
-                textShadow = true,
-                textShadowColor = util.color.rgb(0, 0, 0),
-                position = hudPosition(),
-                -- Anchor (0,1) → position vector points at the element's
-                -- bottom-left corner.
-                anchor = util.vector2(0, 1),
-                visible = true,
-            },
-            userData = {
-                dragging = false,
-                lastMousePos = nil,
-            },
+            layer   = 'Modal',
+            type    = ui.TYPE.Flex,
+            name    = 'StanceHudIndicator',
+            props   = props,
+            userData = { dragging = false, lastMousePos = nil },
+            content = ui.content(buildChildren(tex, iconPx, nameText, showName, prefixTexes)),
         }
-
-        local function rootLayout()
-            return hudElement and hudElement.layout
-        end
-
-        local function hudMousePress(data, _)
-            if not data or data.button ~= 1 or not canDragHud() then return end
-            local layout = rootLayout()
-            if not layout then return end
-            layout.userData = layout.userData or {}
-            layout.userData.dragging = true
-            layout.userData.lastMousePos = data.position
-        end
-
-        local function hudMouseRelease(_, _)
-            local layout = rootLayout()
-            if layout and layout.userData then
-                layout.userData.dragging = false
-                layout.userData.lastMousePos = nil
-            end
-        end
-
-        local function hudMouseMove(data, _)
-            local layout = rootLayout()
-            if not data or not layout or not layout.userData
-                or not layout.userData.dragging or not layout.userData.lastMousePos then return end
-            if not canDragHud() then
-                layout.userData.dragging = false
-                layout.userData.lastMousePos = nil
-                return
-            end
-            local delta = data.position - layout.userData.lastMousePos
-            layout.userData.lastMousePos = data.position
-            local currentPosition = layout.props.position or hudPosition()
-            layout.props.position = storeHudPosition(currentPosition + delta)
-            hudElement:update()
-        end
 
         hudElement.layout.events = {
             mousePress   = async:callback(hudMousePress),
@@ -220,6 +388,7 @@ function M.new(ctx)
             mouseMove    = async:callback(hudMouseMove),
         }
 
+        currentName = nameText
         return hudElement
     end
 
@@ -232,14 +401,65 @@ function M.new(ctx)
         if not activeId then return end
         local stance = getStanceConfig(activeId)
         if not stance then return end
-        local el = ensureHud()
-        -- ONLY the active stance name (with any Spellsword imbue prefix) —
-        -- no level, no other decoration.
-        el.layout.props.text     = formatStanceName(activeId)
-        el.layout.props.textSize = hudTextSize()
-        el.layout.props.position = hudPosition()
-        el.layout.props.visible  = true
-        el:update()
+
+        local iconPx   = hudIconSize()
+        local nameText = formatStanceName(activeId)
+        local showName = showStanceName()
+        local path     = iconPathFor(activeId)
+        local tex      = textureFor(path)
+
+        -- Active-prefix icons (Sneaky / Fortified / Spellsword imbue) are rendered
+        -- in a row BESIDE the stance icon. getActivePrefixIcons returns the VFS
+        -- paths for whichever prefixes are active on this stance (same conditions
+        -- as the name prefix); each is resolved to a texture here, and any that
+        -- fail to load are skipped so a missing asset just means that one icon is
+        -- absent. Only drawn when the base stance icon is present (no icon →
+        -- name-only mode is unchanged). The PATHS drive the structural signature
+        -- (stable strings); the TEXTURES drive rendering.
+        local prefixPaths = tex and getActivePrefixIcons(activeId) or {}
+        local prefixTexes = {}
+        for _, p in ipairs(prefixPaths) do
+            local ptex = textureFor(p)
+            if ptex then prefixTexes[#prefixTexes + 1] = ptex end
+        end
+
+        -- Structural signature: anything here changing requires a rebuild. The
+        -- name text is handled separately (patched in place) so name-only prefix
+        -- changes don't churn the whole element. The prefix icon set IS structural
+        -- (it adds/removes children), so the active prefix paths are folded in
+        -- here — but only ever change when a base icon is shown, so name-only mode
+        -- never rebuilds on a prefix toggle.
+        local structSig = table.concat({
+            tostring(activeId),
+            tostring(path or ''),
+            tex and 'T' or 'F',
+            showName and 'N1' or 'N0',
+            tostring(iconPx),
+            'P:' .. table.concat(prefixPaths, ','),
+        }, '|')
+
+        if structSig ~= currentStructSig or not hudElement then
+            buildHud(tex, iconPx, nameText, showName, prefixTexes)
+            currentStructSig = structSig
+            return
+        end
+
+        -- Same structure on screen: patch the name in place (if it changed)
+        -- and keep the position current (the HUD layer may have resized).
+        local ok = pcall(function()
+            if nameText ~= currentName then
+                local content   = hudElement.layout.content
+                local nameChild = content and content['StanceName']
+                if nameChild then nameChild.props.text = nameText end
+                currentName = nameText
+            end
+            hudElement.layout.props.position = hudPosition()
+            hudElement:update()
+        end)
+        if not ok then
+            -- Element went stale somehow — drop it and rebuild next pass.
+            destroyHud()
+        end
     end
 
     -- UiModeChanged: track the active UI mode so canDragHud() works, and

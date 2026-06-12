@@ -54,9 +54,21 @@ function M.new(ctx)
     -- Fortifier stance's Block effectiveness.
     local currentFortifiedBlockBonus = ctx.currentFortifiedBlockBonus
         or function() return 0 end
+    -- Additive Hand-to-Hand bonus from hand armor worn in the Brawler stance
+    -- (gauntlet/bracer weight class). Returns 0 when not Brawler / no hand armor /
+    -- not provided. Folded into the handtohand contribution below, alongside the
+    -- Brawler effectiveness bonus, through the same native delta-modifier path.
+    local currentBrawlerGauntletHhBonus = ctx.currentBrawlerGauntletHhBonus
+        or function() return 0 end
     -- Returns tooltip note lines for the name prefixes active on a stance
     -- (Sneaky / Fortified / imbue element). Empty when none / not provided.
     local getActivePrefixNotes  = ctx.getActivePrefixNotes or function() return {} end
+    -- Perk-ladder accessor: returns the subtype-appropriate ladder for Forager
+    -- (gardening vs harvesting, by the tool in hand) and the single `perks` array
+    -- for every other stance. Falls back to the stance's own `perks` if not provided.
+    local getStancePerks        = ctx.getStancePerks or function(id)
+        local s = getStanceConfig(id); return (s and s.perks) or {}
+    end
     local xpForStanceLevel      = ctx.xpForStanceLevel
     local resolveStanceSkill    = ctx.resolveStanceSkill
     local perksEnabledForStance = ctx.perksEnabledForStance
@@ -76,6 +88,39 @@ function M.new(ctx)
     -- window row (which displays shortenedName under the 'Stance' subsection)
     -- follows the active stance instead of staying the static registered name.
     local lastSkillSyncedShortName = nil
+    -- Tracks the foreground glyph (fgr path) last pushed into the skill icon, so
+    -- the icon is only re-sent to SF when the active stance's icon changes.
+    local lastSkillSyncedIcon = nil
+
+    -- ── Skill icon ────────────────────────────────────────────────────────
+    -- The Stance skill icon is the standard combat-skill background frame (bgr,
+    -- from the Skill Framework / Merlord's Skills Module asset) with the ACTIVE
+    -- stance's icon as the foreground glyph (fgr) — the same icons/Stance/<X>.dds
+    -- the HUD shows, so the stats menu and its hover tooltip match the HUD.
+    -- SF's modifySkill replaces the nested icon table wholesale (it does not
+    -- merge), so every push includes the bgr frame alongside the fgr; a stance
+    -- with no icon falls back to a frame-only icon (never blank).
+    local SKILL_ICON_BGR       = 'icons/SkillFramework/combat_blank.dds'
+    local SKILL_ICON_BGR_COLOR = util.color.rgb(1, 1, 1)
+    local SKILL_ICON_FGR_COLOR = util.color.rgb(1, 1, 1)
+
+    -- The active stance's icon path (foreground glyph), or nil if it has none.
+    local function stanceIconFgr(stanceId)
+        local s = getStanceConfig(stanceId)
+        return (s and s.icon) or nil
+    end
+
+    -- Build the full SF icon table: the bgr frame always, plus the stance glyph
+    -- (fgr) when the stance has an icon. Sent whole on every update because SF
+    -- replaces the nested icon table rather than merging it.
+    local function buildSkillIcon(fgrPath)
+        local icon = { bgr = SKILL_ICON_BGR, bgrColor = SKILL_ICON_BGR_COLOR }
+        if fgrPath then
+            icon.fgr      = fgrPath
+            icon.fgrColor = SKILL_ICON_FGR_COLOR
+        end
+        return icon
+    end
 
     local function skillIsRegistered()
         return I.SkillFramework
@@ -111,10 +156,9 @@ function M.new(ctx)
                 shortenedName = config.defaultDisplayName,
                 visible = true,
             },
-            icon = {
-                bgr = 'icons/SkillFramework/combat_blank.dds',
-                bgrColor = util.color.rgb(1, 1, 1),
-            },
+            -- Background frame + the current stance's glyph (fgr). The per-tick
+            -- sync (syncToActiveStance) keeps fgr in step as the stance changes.
+            icon = buildSkillIcon(stanceIconFgr(getActiveStance() or 'commoner')),
         })
 
         if readSetting('Progression', 'enableRaceBonuses', true) then
@@ -262,9 +306,29 @@ function M.new(ctx)
         -- Block's whole contribution. Applied through the same delta path so it
         -- stacks cleanly with fortify/drain and clears when the shield comes off.
         local blockBonus = math.floor((currentFortifiedBlockBonus() or 0) + 0.5)
+        -- Brawler gauntlet (hand-armor) Hand-to-Hand bonus, kept RAW (unfloored)
+        -- so it combines with the effectiveness bonus and rounds ONCE below,
+        -- avoiding the double-round a separate floor would introduce on the
+        -- fractional tiers (e.g. +2.5). 0 unless Brawler is active with hand armor
+        -- (refreshBrawlerGauntlet gates the tier on stance + setting).
+        local gauntletHhRaw = currentBrawlerGauntletHhBonus() or 0
+        -- Raw effectiveness for the active stance's target skill, used only for the
+        -- handtohand combine (Brawler is the sole stance whose target is handtohand).
+        local rawTargetEff = (targetSkill and effectivenessSkillBonus(getActiveStance())) or 0
         for _, sid in ipairs(VANILLA_EFF_SKILLS) do
-            local contrib = (sid == targetSkill) and targetBonus or 0
-            if sid == 'block' then contrib = contrib + blockBonus end
+            local contrib
+            if sid == 'handtohand' then
+                -- Effectiveness (only when handtohand is the target, i.e. Brawler) +
+                -- the gauntlet bonus, summed RAW then rounded once. Both addends are
+                -- 0 outside Brawler, so handtohand clears to 0 like any other skill.
+                -- With no gauntlets this equals the plain effectiveness bonus, so the
+                -- non-gauntlet Brawler case is unchanged.
+                local effPart = (targetSkill == 'handtohand') and rawTargetEff or 0
+                contrib = math.floor(effPart + gauntletHhRaw + 0.5)
+            else
+                contrib = (sid == targetSkill) and targetBonus or 0
+                if sid == 'block' then contrib = contrib + blockBonus end
+            end
             setVanillaEffContrib(sid, contrib)
         end
 
@@ -384,7 +448,7 @@ function M.new(ctx)
         if readSetting('Tooltip', 'showPerkTooltips', true) and perksEnabledForStance(stanceId) then
             local unlockedOnly = readSetting('Tooltip', 'tooltipUnlockedOnly', false)
             local first = true
-            for _, perk in ipairs(stance.perks) do
+            for _, perk in ipairs(getStancePerks(stanceId)) do
                 local unlocked = coreLevel >= perk.level
                 if unlocked or not unlockedOnly then
                     if first then table.insert(lines, ''); first = false end
@@ -412,6 +476,25 @@ function M.new(ctx)
         lastSkillSyncedDescription = tryModify('description', description, lastSkillSyncedDescription)
         lastSkillSyncedName        = tryModify('name', displayName, lastSkillSyncedName)
         lastSkillSyncedAttribute   = tryModify('attribute', attribute, lastSkillSyncedAttribute)
+
+        -- Skill icon foreground glyph: the active stance's icon — the same one
+        -- the HUD shows — so the stats-menu row and its hover tooltip track the
+        -- stance. The FULL icon table is sent (the nested table is replaced, not
+        -- merged, so bgr must accompany fgr), and only when the glyph path
+        -- actually changes. Its own pcall keeps older SF builds that reject an
+        -- `icon` modify from losing the other field updates above.
+        local fgrPath = stanceIconFgr(stanceId)
+        if fgrPath ~= lastSkillSyncedIcon then
+            local ok, err = pcall(I.SkillFramework.modifySkill, SKILL_ID, {
+                icon = buildSkillIcon(fgrPath),
+            })
+            if ok then
+                lastSkillSyncedIcon = fgrPath
+            else
+                debugLog('modifySkill failed for icon: ' .. tostring(err),
+                    'debugIntegrationMessages')
+            end
+        end
 
         -- The stats-window ROW shows statsWindowProps.shortenedName (the
         -- 'Stance' subsection header comes from .subsection), and that was

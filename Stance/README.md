@@ -165,7 +165,10 @@ bonus to that stance's target skill), shown in the tooltip.
 in the character sheet (under the **Stance** subsection, via Stats Window
 Extender) renames itself **live** to the decorated active stance — sheathe your
 blade and it reads `Commoner`; draw a longsword behind a shield while crouched
-and it reads `Sneaky Fortified Soloist`. Whenever the active stance gains XP,
+and it reads `Sneaky Fortified Soloist`. Its **icon** tracks the stance too:
+the same `icons/Stance/<X>.dds` glyph the HUD shows is drawn on the combat-skill
+frame, so the stats-menu row and its hover tooltip always match the HUD.
+Whenever the active stance gains XP,
 the core skill gains **half** of that amount and levels **independently**. So each individual stance levels roughly twice as fast
 as the core skill, and the core skill is a running measure of your overall
 stance mastery that never resets when you switch.
@@ -233,9 +236,18 @@ that stance.
 
 ## HUD indicator
 
-The HUD shows **only** the name of the currently active stance (with any active
-prefixes — *Sneaky / Fortified / Blazed-Frozen-Electrified*). No level, no other
-decoration — just the name in the corner of the screen.
+The HUD shows the **icon** of the currently active stance, with the stance
+**name** beneath it (including any active prefixes — *Sneaky / Fortified /
+Blazed-Frozen-Electrified*). Each of the 19 stances has its own icon, shipped
+in `icons/Stance/` and wired through the stance's `icon` field in `config.lua`;
+the indicator swaps icon and name automatically as the active stance changes.
+While you are **crouched** (the *Sneaky* prefix is active), a small Sneaky
+badge is overlaid on the bottom-right corner of the stance icon — the icon
+counterpart of the `Sneaky …` name prefix — and it disappears the moment you
+stand. The name can be hidden for an icon-only indicator, and the icon size is
+adjustable (the name scales with it, and so does the badge). If a stance is
+ever missing an icon, the indicator falls back to showing just the name so it
+is never blank.
 
 **Draggable.** Open any vanilla menu (inventory, map, magic, stats) and
 click-drag the indicator to any position on screen. The position is saved
@@ -262,7 +274,8 @@ focused groups:
    global XP multiplier (0–500%).
 5. **Integrations** — one toggle per external-mod hookup, grouped by category.
    Disabling an integration falls back to native detection where possible.
-6. **HUD Indicator** — show toggle, lock toggle, text size, X / Y position.
+6. **HUD Indicator** — show toggle, show-stance-name toggle (icon-only when
+   off), lock toggle, indicator (icon) size, X / Y position.
 7. **Tooltip** — what appears inside the dynamic Stance-skill tooltip
    (mechanic details, perk ladder, unlocked-only filter, all-stances summary).
 8. **Notifications** — perk-unlock popup style (Disabled / Popup / Message),

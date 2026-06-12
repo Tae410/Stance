@@ -52,8 +52,12 @@ SettingEnableThief: Enable Thief
 SettingEnableThiefDescription: Active when wielding a short blade (ShortBladeOneHand). Governed by Speed (matching vanilla Short Blade). Perks add attack speed, Sneak skill, backstab damage, and a movement-speed capstone.
 SettingEnableBrawler: Enable Brawler
 SettingEnableBrawlerDescription: Active when fists are up with no weapon equipped. Governed by Strength. Interlopes with Gothic Style Knockout for knockout chance.
+SettingEnableBrawlerGauntlets: Enable Brawler Gauntlet Tradeoff
+SettingEnableBrawlerGauntletsDescription: While the Brawler stance is active, armor worn in the hand slots (gauntlets or bracers) grants an additive Hand-to-Hand bonus at the cost of unarmed attack speed, scaling with the armor's weight class — Light +2.5 HtH / −25% speed, Medium +5 / −50%, Heavy +7.5 / −75%. Bare fists (no hand armor) incur neither. The Hand-to-Hand bonus stacks on the Brawler effectiveness bonus; the speed penalty slows only unarmed swings. Weight class is read exactly as the engine classifies armor (the iGauntletWeight / fLightMaxMod / fMedMaxMod GMSTs).
 SettingEnableApothecary: Enable Apothecary
 SettingEnableApothecaryDescription: Active whenever a Thrown Concoction is equipped as your weapon (the concoctions from the Thrown Concoctions mod are thrown weapons). Governed by Intelligence and boosts Alchemy. Levels only when a hurled concoction lands on an enemy. Requires the Thrown Concoctions mod. With the integration off, concoctions are treated as ordinary thrown weapons (the Twirler stance) instead.
+SettingEnableForager: Enable Forager
+SettingEnableForagerDescription: Active when any Gardening and Farming tool or weapon is equipped (Gardening Hammer/Shovel/Shears/Waterskin, Harvest Hoe/Scythe, or an Imperial/Ivory/Glass/Daedric Farming Scythe). Governed by Intelligence; the effectiveness bonus follows whichever skill the tool in hand uses (axe, blunt, short blade or spear). The Forager carries TWO perk ladders — a gardening set and a harvesting set — and shows/applies the one matching the tool type currently held. Requires the Gardening and Farming mod. With this off, the tools fall through to their normal weapon-type stance.
 
 GroupPerksName: Perks
 GroupPerksDescription: Toggle perks per stance or all at once. Disabled perks do not fire their effects, but the stance still gains XP and levels normally. Stance order matches the Stances group for easy cross-reference.
@@ -95,6 +99,8 @@ SettingEnableBrawlerPerks: Brawler Perks
 SettingEnableBrawlerPerksDescription: Iron Grip (25), Close-Range Fighter (50), Concussive Jab (75), Street Master (100). Unarmed-themed.
 SettingEnableApothecaryPerks: Apothecary Perks
 SettingEnableApothecaryPerksDescription: Deft Hurler (25), Volatile Concoction (50), Corrosive Cloud (75), Master Apothecary (100). Concoction-throwing themed. The on-hit effects (stagger, caustic cloud, paralysis) fire whenever a thrown concoction strikes an enemy; the passive Agility, Intelligence and Luck bonuses apply regardless.
+SettingEnableForagerPerks: Forager Perks
+SettingEnableForagerPerksDescription: Two ladders, shown and applied by the tool in hand. GARDENING tools (Hammer/Shovel/Shears/Waterskin) → Green Thumb (25, +5 Alchemy), Cultivator's Patience (50, +5 Int), Rooted Endurance (75, +5 End), Master Gardener (100, +5 Int & +5 Alchemy). HARVESTING tools (Harvest Hoe/Scythe and the combat Farming Scythes) → Reaper's Grip (25, +5 Str), Sweeping Cut (50, +5 Agi), Bountiful Hands (75, +5 Luck), Master Harvester (100, +5 Str & +5 Agi). Both ladders unlock off the shared core Stance skill level; switching tools switches the set live.
 
 GroupProgressionName: Progression
 GroupProgressionDescription: How the player gains Stance levels. Each XP source has its own toggle. The XP multiplier applies globally — set to 50 for half-speed leveling, 200 for double-speed, and so on.
@@ -160,13 +166,15 @@ SettingIntegrateEvasion: Evasion!
 SettingIntegrateEvasionDescription: "Detect Evasion! via its settings section (Settings_Evasion). When present, the stance tooltip annotates each stance's Sanctuary bonus with '(Evasion!)' to clarify it stacks on top of Evasion!'s own skill-based Sanctuary calculation. The per-stance Sanctuary bonus is applied unconditionally whether or not Evasion! is installed — this toggle only governs the attribution label in the tooltip."
 
 GroupHUDName: HUD Indicator
-GroupHUDDescription: The on-screen text label that shows the name of the currently active stance. Click and drag it to any position while an inventory-like menu (Inventory, Map, Magic, Stats, Container, Barter) is open; the position auto-saves. Lock the position to disable drag without hiding the indicator.
+GroupHUDDescription: The on-screen indicator showing the currently active stance — its icon, with the stance name (and any active prefix) beneath it. Click and drag it to any position while an inventory-like menu (Inventory, Map, Magic, Stats, Container, Barter) is open; the position auto-saves. Lock the position to disable drag without hiding the indicator.
 SettingShowHudIndicator: Show HUD Indicator
-SettingShowHudIndicatorDescription: Display the active stance name as a small text overlay. The overlay shows only the stance name — no level, no icon, no decoration.
+SettingShowHudIndicatorDescription: Display the active stance's icon on screen, with the stance name beneath it (the name can be hidden separately below for an icon-only indicator).
+SettingHudShowStanceName: Show Stance Name
+SettingHudShowStanceNameDescription: Show the active stance name (with any active prefix such as a Spellsword imbue, Fortified, or Sneaky decoration) beneath the icon. Turn off for an icon-only indicator. If a stance has no icon, the name is shown regardless so the indicator is never blank.
 SettingHudIndicatorLockPosition: Lock HUD Position
 SettingHudIndicatorLockPositionDescription: Prevent click-and-drag repositioning of the HUD indicator. The X and Y settings below remain authoritative when locked.
-SettingHudIndicatorIconSize: HUD Text Size
-SettingHudIndicatorIconSizeDescription: Pixel size of the HUD indicator text (8 to 96).
+SettingHudIndicatorIconSize: HUD Indicator Size
+SettingHudIndicatorIconSizeDescription: On-screen pixel size of the stance icon (8 to 96). The stance name beneath it scales with this value.
 SettingHudIndicatorX: HUD X Position
 SettingHudIndicatorXDescription: Horizontal pixel position of the HUD indicator. Set to 0 to use the default lower-left placement. Updated automatically when you drag the indicator. Values are clamped to the HUD layer size at runtime, so very large numbers are safe.
 SettingHudIndicatorY: HUD Y Position

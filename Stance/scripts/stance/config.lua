@@ -106,6 +106,36 @@ local config = {
     -- knobs in the leveling block tune both systems in unison. There is no
     -- separate flat value to configure.
 
+    -- ─── Brawler gauntlet tradeoff (hand armor while unarmed) ──────────────
+    -- While the Brawler stance is active (fists up, no weapon), the armor worn
+    -- in the hand slots grants an additive Hand-to-Hand bonus at the cost of
+    -- unarmed attack speed, scaling with the armor's weight class — heavier
+    -- plate hits harder but slower. BOTH gauntlets (LGauntlet/RGauntlet) and
+    -- bracers (LBracer/RBracer) occupy the gauntlet equipment slots and both
+    -- are classified here; the heavier of the two equipped pieces sets the
+    -- tier. The weight class is computed EXACTLY as the engine does it (see
+    -- player/prefixes.lua classifyHandArmor, mirroring mwclass/armor.cpp
+    -- getEquipmentSkill): weight ≤ floor(iGauntletWeight) × fLightMaxMod → Light,
+    -- ≤ × fMedMaxMod → Medium, else Heavy. "Unarmored" means no hand armor at
+    -- all (bare fists) → the 'none' tier: no bonus, no penalty.
+    --
+    --   hhBonus     — additive Hand-to-Hand skill points. Stacks ON TOP of the
+    --                 Brawler effectiveness bonus through the same delta-
+    --                 accounted native-modifier path (so it clears cleanly when
+    --                 the gauntlets come off or the stance changes).
+    --   speedDebuff — subtracted from the unarmed attack-animation speed
+    --                 multiplier (1.0 = normal). 0.25 ⇒ swings play at 0.75×.
+    -- The values below are the design defaults; tune freely. Light/Medium/Heavy
+    -- map 1:1 to the three vanilla armor weight classes.
+    brawlerGauntlet = {
+        light  = { hhBonus = 2.5, speedDebuff = 0.25 },
+        medium = { hhBonus = 5.0, speedDebuff = 0.50 },
+        heavy  = { hhBonus = 7.5, speedDebuff = 0.75 },
+        -- Defensive floor on the resulting speed multiplier so a re-tune (or a
+        -- mod-raised debuff) can never freeze unarmed attacks at 0× speed.
+        minSpeedMult = 0.10,
+    },
+
     -- ─── SneakIsGoodNow integration (attentiveness + sneak weapon bonus) ──────
     -- When SneakIsGoodNow is active and the player is sneaking, Stance!
     -- contributes two bonus systems:
@@ -212,6 +242,7 @@ local config = {
         {
             id = 'arcanist',
             displayName = 'Arcanist',
+            icon = 'icons/Stance/Arcanist.dds',
             attribute = 'intelligence',
             description = 'The spellcasting posture, favored by the Telvanni and those who study under them. Magicka yields more readily when the mind stills the body and the voice carries the working.',
             integrations = { 'incantation', 'meditation' },
@@ -240,6 +271,7 @@ local config = {
         {
             id = 'reforger',
             displayName = 'Reforger',
+            icon = 'icons/Stance/Reforger.dds',
             attribute = 'endurance',
             description = 'The armorer\'s hammer knows every joint and seam in a cuirass. You carry it as a weapon because you know where it breaks. The forge builds the arms that swing it.',
             integrations = { 'weaponupgrade', 'armorupgrade' },
@@ -268,6 +300,7 @@ local config = {
         {
             id = 'blademeister',
             displayName = 'Blademeister',
+            icon = 'icons/Stance/Blademeister.dds',
             attribute = 'agility',
             description = 'A pact between wielder and blade — the weapon shaped by something older than craft, the hand guided by something stranger than training. The two grow toward one another with each soul the blade drinks.',
             integrations = { 'blademeister' },
@@ -297,6 +330,7 @@ local config = {
         {
             id = 'huntsman',
             displayName = 'Huntsman',
+            icon = 'icons/Stance/Huntsman.dds',
             attribute = 'speed',
             description = 'The bow is not a warrior\'s weapon by nature — it is a hunter\'s tool, grown patient on the game trails of the Ashlands and the green forests east of the Velothi Mountains. Speed governs the draw.',
             integrations = { 'bullseye' },
@@ -326,6 +360,7 @@ local config = {
         {
             id = 'twirler',
             displayName = 'Twirler',
+            icon = 'icons/Stance/Twirler.dds',
             attribute = 'agility',
             description = 'Thrown steel is a poor substitute for a proper blade — until it is not. Those who practice the spinning release learn that distance and precision together are more dangerous than proximity alone. Agility governs the wrist.',
             integrations = { 'throwing' },
@@ -355,6 +390,7 @@ local config = {
         {
             id = 'thaumaturge',
             displayName = 'Thaumaturge',
+            icon = 'icons/Stance/Thaumaturge.dds',
             attribute = 'willpower',
             description = 'A stave is not a mace with ambitions — it is a conduit, shaped from wood and intention, that bends magicka along the blow. Willpower governs the form, as with all things that bend the unseen to a purpose.',
             integrations = { 'staves' },
@@ -384,6 +420,7 @@ local config = {
         {
             id = 'dualist',
             displayName = 'Dualist',
+            icon = 'icons/Stance/Dualist.dds',
             attribute = 'speed',
             description = 'Two blades, one mind. The off-hand weapon is not a second chance — it is the first blow\'s completion. Speed is the governing virtue, for a slow dualist is simply outnumbered.',
             integrations = { 'dualwielding' },
@@ -413,6 +450,7 @@ local config = {
         {
             id = 'zweihander',
             displayName = 'Zweihänder',
+            icon = 'icons/Stance/Zweihander.dds',
             attribute = 'strength',
             description = 'A two-handed long blade is not a larger sword — it is a different instrument, governed by different rules. Heavy, unforgiving, and ruinous when it lands. Strength governs it, as it has always governed the things that simply refuse to stop.',
             integrations = {},
@@ -442,6 +480,7 @@ local config = {
         {
             id = 'guisarmier',
             displayName = 'Guisarmier',
+            icon = 'icons/Stance/Guisarmier.dds',
             attribute = 'endurance',
             description = 'The spear\'s virtue is reach — the gap between its point and your body is the argument it makes. The Redoran house-guard tradition has understood this for generations. Endurance governs it, for the spear demands patience as much as strength.',
             integrations = {},
@@ -471,6 +510,7 @@ local config = {
         {
             id = 'pitmen',
             displayName = 'Pitmen',
+            icon = 'icons/Stance/Pitman.dds',
             attribute = 'endurance',
             description = 'The Miner\'s Pick was not made for war — which is exactly what makes it dangerous in the hands of someone who knows its weight. The Pitmen swings it the same way below ground as above. Endurance governs the form.',
             integrations = { 'simplymining' },
@@ -500,6 +540,7 @@ local config = {
         {
             id = 'angler',
             displayName = 'Angler',
+            icon = 'icons/Stance/Angler.dds',
             attribute = 'luck',
             description = 'The fishing pole is a weapon the way a healer is a combatant — technically accurate and widely underestimated. Luck governs the Angler, for Vvardenfell\'s waters reward the fortunate cast as much as the practiced one.',
             integrations = { 'fishing' },
@@ -529,6 +570,7 @@ local config = {
         {
             id = 'apothecary',
             displayName = 'Apothecary',
+            icon = 'icons/Stance/Apothecary.dds',
             attribute = 'intelligence',
             description = 'A flask is a spell you can hold in your hand, and the Apothecary has decided the most direct delivery is overhand. Governed by Intelligence — the same wit that distills a poison judges the arc that delivers it. Active whenever a Thrown Concoction is readied as a weapon, and boosts Alchemy. Levels only when a hurled concoction finds an enemy. Requires the Thrown Concoctions mod.',
             integrations = { 'thrownconcoctions' },
@@ -556,8 +598,65 @@ local config = {
         },
 
         {
+            id = 'forager',
+            displayName = 'Forager',
+            icon = 'icons/Stance/Forager.dds',
+            attribute = 'intelligence',
+            description = 'The garden and the battlefield are the same ground to one who works both. The Forager tends, reaps, and — when the wandering beasts come for the harvest — fights with whatever tool is already in hand. Intelligence governs the craft, as it governs the Gardening it grows from.',
+            integrations = {},
+            category = 'utility',
+            evasionBonus = 3,   -- Patient, watchful work; a fair eye for trouble
+            -- The Forager is unique: it carries TWO perk ladders, and the one that
+            -- applies is chosen by the TOOL currently in hand (see the resolver's
+            -- getActiveForagerSubtype and init.lua's getStancePerks / perks.lua's
+            -- subtype-gated effects). Holding a GARDENING tool (Hammer, Shovel,
+            -- Shears, Waterskin) shows and applies `perksGardening`; holding a
+            -- HARVESTING tool (Harvest Hoe / Scythe or a combat Farming Scythe)
+            -- shows and applies `perksHarvesting`. Both ladders unlock off the same
+            -- shared core Stance skill level (25/50/75/100). There is intentionally
+            -- no plain `perks` field — every consumer routes through getStancePerks.
+            perksGardening = {
+                {
+                    level = 25, id = 'greenThumb', name = 'Green Thumb',
+                    description = 'The gardener knows each plant\'s virtue, and the harvest feeds the alchemist\'s craft. Effective Alchemy skill increased by five.',
+                },
+                {
+                    level = 50, id = 'cultivatorsPatience', name = "Cultivator's Patience",
+                    description = 'Tending growth teaches the long view; the mind sharpens with every turning season. Intelligence increased by five.',
+                },
+                {
+                    level = 75, id = 'rootedEndurance', name = 'Rooted Endurance',
+                    description = 'Days bent to the soil harden the back and steady the hands. Endurance increased by five.',
+                },
+                {
+                    level = 100, id = 'masterGardener', name = 'Master Gardener',
+                    description = 'The garden answers to a master\'s hand — every bed thrives, every reagent runs richer. Intelligence and Alchemy are each increased by a further five.',
+                },
+            },
+            perksHarvesting = {
+                {
+                    level = 25, id = 'reapersGrip', name = "Reaper's Grip",
+                    description = 'The scythe is swung the same whether the stalk is wheat or throat. Strength increased by five.',
+                },
+                {
+                    level = 50, id = 'sweepingCut', name = 'Sweeping Cut',
+                    description = 'The harvest stroke is wide and unbroken; momentum carries from one mark to the next. Agility increased by five.',
+                },
+                {
+                    level = 75, id = 'bountifulHands', name = 'Bountiful Hands',
+                    description = 'The seasoned reaper\'s hands find more in every swing — grain, coin, or spoils. Luck increased by five.',
+                },
+                {
+                    level = 100, id = 'masterHarvester', name = 'Master Harvester',
+                    description = 'Whatever the field yields, you take all of it — and faster than anyone. Strength and Agility are each increased by a further five.',
+                },
+            },
+        },
+
+        {
             id = 'axeman',
             displayName = 'Axeman',
+            icon = 'icons/Stance/Axeman.dds',
             attribute = 'strength',
             description = 'An axe asks only one question and accepts only one answer. No governing attribute was ever more honestly earned by the weapon that demanded it. Governed by Strength.',
             integrations = {},
@@ -587,6 +686,7 @@ local config = {
         {
             id = 'mjolnir',
             displayName = 'Mjolnir',
+            icon = 'icons/Stance/Mjolnir.dds',
             attribute = 'strength',
             description = 'Maces, clubs, warhammers, mauls — instruments of reduction. What they strike, they simplify. Strength governs the stance without argument. Staves are a different tradition entirely and are not welcome here.',
             integrations = {},
@@ -616,6 +716,7 @@ local config = {
         {
             id = 'soloist',
             displayName = 'Soloist',
+            icon = 'icons/Stance/Soloist.dds',
             attribute = 'endurance',
             description = 'A long blade in one hand, no shield — a deliberate choice, not a deficiency. The empty off-hand is the statement. Endurance governs the form, for the fighter who carries only a blade cannot afford to tire.',
             integrations = {},
@@ -645,6 +746,7 @@ local config = {
         {
             id = 'thief',
             displayName = 'Thief',
+            icon = 'icons/Stance/Thief.dds',
             attribute = 'speed',
             description = 'A short blade was never meant for dueling — it was meant to end the matter before a duel could begin. Speed governs the form, as the Morag Tong have always understood.',
             integrations = {},
@@ -674,6 +776,7 @@ local config = {
         {
             id = 'locksmith',
             displayName = 'Locksmith',
+            icon = 'icons/Stance/Locksmith.dds',
             attribute = 'agility',
             description = 'Tools in the pouch, eyes on the keyhole — the posture of one who does not expect trouble but has not forgotten how to make it. Agility governs the form, as it governs the Security skill these tools serve.',
             integrations = {},
@@ -702,6 +805,7 @@ local config = {
         {
             id = 'brawler',
             displayName = 'Brawler',
+            icon = 'icons/Stance/Brawler.dds',
             attribute = 'strength',
             description = 'The fist is the oldest weapon — always carried, never confiscated, never broken. Strength governs it, as it has since before blades had names.',
             integrations = { 'gothicknockout' },
@@ -730,6 +834,7 @@ local config = {
         {
             id = 'commoner',
             displayName = 'Commoner',
+            icon = 'icons/Stance/Commoner.dds',
             attribute = 'luck',
             description = 'Weapons sheathed, fists still — the posture of commerce and conversation, of gates passed without incident and prices reduced by patience. Luck is its virtue, the diplomat\'s constant companion.',
             integrations = {},
@@ -1040,7 +1145,7 @@ local config = {
         tooltipStanceColor = { 0.92, 0.85, 0.55 },
         tooltipPerkColor   = { 0.85, 0.85, 0.85 },
         messageDuration    = 3.0,
-        hudIconSize        = 22,
+        hudIconSize        = 48,   -- default on-screen pixel size of the stance icon
     },
 
     -- ─── Debug ────────────────────────────────────────────────────────────

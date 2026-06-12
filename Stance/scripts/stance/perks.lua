@@ -96,7 +96,7 @@ local perkContribDirty = false
 local SKILL_NAMES = {
     'longblade', 'shortblade', 'bluntweapon', 'axe', 'spear', 'marksman',
     'handtohand', 'block', 'armorer', 'security', 'speechcraft', 'mercantile',
-    'sneak', 'mysticism',
+    'sneak', 'mysticism', 'alchemy',
 }
 local perkSkillContrib = {}
 for _, s in ipairs(SKILL_NAMES) do perkSkillContrib[s] = 0 end
@@ -129,6 +129,9 @@ local function intPresent(id)        return C and C.integrationPresent(id)      
 local function readSetting(g, k, d)  return C and C.readSetting(g, k, d) or d   end
 local function perksEnabled(sid)     return C and C.perksEnabled(sid)   or false end
 local function getSelf()             return C and C.getSelf()                    end
+-- Active Forager weapon subtype ('gardening'|'harvesting'|nil). Gates which of
+-- the two Forager perk sets applies its EFFECTS (mirrors the displayed ladder).
+local function getForagerSubtype()   return C and C.getForagerSubtype and C.getForagerSubtype() or nil end
 
 -- Full gate: every condition must pass for a perk to be active.
 local function perkActive(stanceId, threshold)
@@ -387,6 +390,32 @@ local function computeDesiredAttrContribs()
         end
     end
 
+    -- ── Forager ───────────────────────────────────────────────────────────
+    -- Two perk ladders selected by the tool in hand (see getForagerSubtype):
+    --   GARDENING (Intelligence-leaning, nurturing): Cultivator's Patience (Int),
+    --     Rooted Endurance (End), Master Gardener (Int; the Alchemy half is a
+    --     skill modifier in computeDesiredSkillContribs).
+    --   HARVESTING (combat-leaning reaping): Reaper's Grip (Str), Sweeping Cut
+    --     (Agi), Bountiful Hands (Luck), Master Harvester (Str + Agi).
+    -- The level-25 gardening perk (Green Thumb, +5 Alchemy) is purely a skill
+    -- modifier, so it has no attribute line here.
+    if sid == 'forager' and perksEnabled('forager') then
+        local sub = getForagerSubtype()
+        if sub == 'gardening' then
+            if cl >= 50  then d.intelligence = d.intelligence + 5 end  -- Cultivator's Patience
+            if cl >= 75  then d.endurance    = d.endurance    + 5 end  -- Rooted Endurance
+            if cl >= 100 then d.intelligence = d.intelligence + 5 end  -- Master Gardener (Int half)
+        elseif sub == 'harvesting' then
+            if cl >= 25  then d.strength = d.strength + 5 end  -- Reaper's Grip
+            if cl >= 50  then d.agility  = d.agility  + 5 end  -- Sweeping Cut
+            if cl >= 75  then d.luck     = d.luck     + 5 end  -- Bountiful Hands
+            if cl >= 100 then                                  -- Master Harvester
+                d.strength = d.strength + 5
+                d.agility  = d.agility  + 5
+            end
+        end
+    end
+
     return d
 end
 
@@ -425,6 +454,16 @@ local function computeDesiredSkillContribs()
     if perkActive('locksmith', 75) then d.sneak = d.sneak + 5 end
     -- Commoner — Silver Tongue (50): +5 Speechcraft
     if perkActive('commoner', 50) then d.speechcraft = d.speechcraft + 5 end
+
+    -- Forager (GARDENING tools only) — Green Thumb (25): +5 Alchemy, and
+    -- Master Gardener (100): a further +5 Alchemy. perkActive already gates on
+    -- forager being the active stance + core level + perk toggle; the subtype
+    -- check restricts these to when a gardening tool is in hand (the harvesting
+    -- ladder grants attribute bonuses instead, handled above).
+    if getForagerSubtype() == 'gardening' then
+        if perkActive('forager', 25)  then d.alchemy = d.alchemy + 5 end  -- Green Thumb
+        if perkActive('forager', 100) then d.alchemy = d.alchemy + 5 end  -- Master Gardener (Alchemy half)
+    end
 
     return d
 end

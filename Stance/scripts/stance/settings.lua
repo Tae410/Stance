@@ -97,7 +97,9 @@ I.Settings.registerGroup {
         { key = 'enableSoloist',     renderer = 'checkbox', name = 'SettingEnableSoloist',     description = 'SettingEnableSoloistDescription',     default = true },
         { key = 'enableThief',       renderer = 'checkbox', name = 'SettingEnableThief',       description = 'SettingEnableThiefDescription',       default = true },
         { key = 'enableBrawler',     renderer = 'checkbox', name = 'SettingEnableBrawler',     description = 'SettingEnableBrawlerDescription',     default = true },
+        { key = 'enableBrawlerGauntlets', renderer = 'checkbox', name = 'SettingEnableBrawlerGauntlets', description = 'SettingEnableBrawlerGauntletsDescription', default = true },
         { key = 'enableApothecary',  renderer = 'checkbox', name = 'SettingEnableApothecary',  description = 'SettingEnableApothecaryDescription',  default = true },
+        { key = 'enableForager',     renderer = 'checkbox', name = 'SettingEnableForager',     description = 'SettingEnableForagerDescription',     default = true },
     },
 }
 
@@ -133,6 +135,7 @@ I.Settings.registerGroup {
         { key = 'enableThiefPerks',       renderer = 'checkbox', name = 'SettingEnableThiefPerks',       description = 'SettingEnableThiefPerksDescription',       default = true },
         { key = 'enableBrawlerPerks',     renderer = 'checkbox', name = 'SettingEnableBrawlerPerks',     description = 'SettingEnableBrawlerPerksDescription',     default = true },
         { key = 'enableApothecaryPerks',  renderer = 'checkbox', name = 'SettingEnableApothecaryPerks',  description = 'SettingEnableApothecaryPerksDescription',  default = true },
+        { key = 'enableForagerPerks',     renderer = 'checkbox', name = 'SettingEnableForagerPerks',     description = 'SettingEnableForagerPerksDescription',     default = true },
     },
 }
 
@@ -244,13 +247,14 @@ I.Settings.registerGroup {
     permanentStorage = true,
     settings = {
         { key = 'showHudIndicator',         renderer = 'checkbox', name = 'SettingShowHudIndicator',         description = 'SettingShowHudIndicatorDescription',         default = true },
+        { key = 'hudShowStanceName',        renderer = 'checkbox', name = 'SettingHudShowStanceName',        description = 'SettingHudShowStanceNameDescription',        default = true },
         { key = 'hudIndicatorLockPosition', renderer = 'checkbox', name = 'SettingHudIndicatorLockPosition', description = 'SettingHudIndicatorLockPositionDescription', default = false },
         {
             key = 'hudIndicatorIconSize',
             renderer = 'number',
             name = 'SettingHudIndicatorIconSize',
             description = 'SettingHudIndicatorIconSizeDescription',
-            default = 22,
+            default = 48,
             argument = { min = 8, max = 96, integer = true },
         },
         {

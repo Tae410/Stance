@@ -37,6 +37,12 @@ local types   = require('openmw.types')
 local ui      = require('openmw.ui')
 local util    = require('openmw.util')
 local async   = require('openmw.async')
+-- Attack-speed delivery for the Brawler gauntlet penalty: animation.setSpeed
+-- scales the "handtohand" group (unarmed attack/equip animations only — never
+-- movement or idle for the bipedal player), re-applied per frame in onFrame
+-- since setSpeed is not sticky. Required here at the top with the other engine
+-- packages; available in player (local) scripts on OpenMW 0.49+.
+local animation = require('openmw.animation')
 
 local config = require('scripts.stance.config')
 local Perks  = require('scripts.stance.perks')
@@ -100,6 +106,7 @@ local isDualWielding       -- assigned in "Dual wielding detection" section
 local isFelthornInOffhand  -- assigned in "Dual wielding detection" section
 local perksEnabledForStance -- assigned in perk-setting helpers section
 local debugLog             -- assigned in "Logging" section
+local getActiveForagerSubtype -- assigned when the resolver module is created below
 
 local perksInitialized = false
 
@@ -118,6 +125,9 @@ local function ensurePerksInit()
         perksEnabled         = function(id) return perksEnabledForStance(id) end,
         getSelf              = function() return self end,
         getStanceStorage     = function() return stanceStateSection end,
+        -- Live Forager weapon subtype ('gardening'|'harvesting'|nil) so the
+        -- subtype-gated Forager perk EFFECTS apply the set matching the tool in hand.
+        getForagerSubtype    = function() return getActiveForagerSubtype and getActiveForagerSubtype() or nil end,
     }
     Perks.init(perkContext)
     debugLog('Perks module initialised.', 'debugIntegrationMessages')
@@ -255,12 +265,32 @@ end
 
 local PERK_THRESHOLDS = { 25, 50, 75, 100 }
 
+-- Return the perk ladder for a stance. For every stance this is its single
+-- `perks` array — EXCEPT Forager, which carries two ladders (perksGardening /
+-- perksHarvesting) and shows the one matching the tool currently in hand. The
+-- subtype is read live; when no Forager tool is equipped (e.g. a loadout preview
+-- for Forager) it defaults to the gardening ladder. This is the single accessor
+-- every perk consumer (unlock list, next-perk, unlock announcements, tooltip)
+-- routes through, so the displayed ladder always follows the equipped weapon.
+local function getStancePerks(stanceId)
+    local stance = getStanceConfig(stanceId)
+    if not stance then return {} end
+    if stanceId == 'forager' then
+        local sub = getActiveForagerSubtype and getActiveForagerSubtype() or nil
+        if sub == 'harvesting' and stance.perksHarvesting then
+            return stance.perksHarvesting
+        end
+        return stance.perksGardening or stance.perks or {}
+    end
+    return stance.perks or {}
+end
+
 local function unlockedPerks(stanceId)
     local stance = getStanceConfig(stanceId)
     if not stance then return {} end
     local level = getCoreSkillLevel()
     local result = {}
-    for _, perk in ipairs(stance.perks) do
+    for _, perk in ipairs(getStancePerks(stanceId)) do
         if level >= perk.level then table.insert(result, perk) end
     end
     return result
@@ -270,7 +300,7 @@ local function nextPerk(stanceId)
     local stance = getStanceConfig(stanceId)
     if not stance then return nil end
     local level = getCoreSkillLevel()
-    for _, perk in ipairs(stance.perks) do
+    for _, perk in ipairs(getStancePerks(stanceId)) do
         if level < perk.level then return perk end
     end
     return nil
@@ -507,10 +537,20 @@ local refreshFortified           = prefixes.refreshFortified
 local refreshSneaky              = prefixes.refreshSneaky
 local currentFortifiedBlockBonus = prefixes.currentFortifiedBlockBonus
 local getActivePrefixNotes       = prefixes.getActivePrefixNotes
+local getActivePrefixIcons       = prefixes.getActivePrefixIcons
+local isSneakyActive             = prefixes.isSneakyActive
 -- Saved-loadout name helpers (used by the Loadouts integration interface below).
 local isFortifiable              = prefixes.isFortifiable
 local isShieldRecord             = prefixes.isShieldRecord
 local formatLoadoutStanceName    = prefixes.formatLoadoutStanceName
+-- Brawler gauntlet tradeoff (hand-armor weight class while unarmed): refreshed
+-- per tick alongside refreshFortified; the HtH bonus feeds the effectiveness
+-- system and the speed multiplier feeds the onFrame attack-speed applier.
+local refreshBrawlerGauntlet            = prefixes.refreshBrawlerGauntlet
+local getBrawlerGauntletTier            = prefixes.getBrawlerGauntletTier
+local currentBrawlerGauntletHhBonus     = prefixes.currentBrawlerGauntletHhBonus
+local currentBrawlerGauntletSpeedDebuff = prefixes.currentBrawlerGauntletSpeedDebuff
+local currentBrawlerGauntletSpeedMult   = prefixes.currentBrawlerGauntletSpeedMult
 
 -- ─── Weapon classifiers + stance resolver (module) ───────────────────────
 -- All classification and the resolveStance waterfall live in
@@ -537,6 +577,9 @@ local resolveStance         = resolver.resolveStance
 local classifyRecord        = resolver.classifyRecord
 local isOneHandedMelee      = resolver.isOneHandedMelee
 local runtimeWeaponRecord   = resolver.runtimeWeaponRecord
+-- Assign the forward-declared subtype accessor (captured by the perk-context
+-- closure above and used by getStancePerks / getForagerSkill below).
+getActiveForagerSubtype     = resolver.getActiveForagerSubtype
 
 -- ─── Dual wielding detection ──────────────────────────────────────────────
 --
@@ -695,6 +738,10 @@ local STANCE_SKILL_TARGET = {
     -- Blademeister boosts whichever skill the current Felthorn form uses.
     dualist      = { dynamic = true },
     blademeister = { dynamic = true },
+    -- Forager: the Gardening and Farming tools span several weapon types
+    -- (axe / blunt / short blade / spear), so the effectiveness bonus follows
+    -- whichever skill the tool currently in hand actually uses (see getForagerSkill).
+    forager      = { dynamic = true },
     -- Arcanist: mysticism is the intelligence-governed spellcasting meta-skill
     -- (soul trap, dispel, spell absorption) and the natural effectiveness target
     -- for the spellcasting stance.
@@ -752,6 +799,28 @@ local function getBlademeisterSkill()
     return 'longblade'  -- fallback for any unexpected form
 end
 
+-- Resolve the skill ID for the Forager stance from the equipped tool's weapon
+-- type. The Gardening and Farming tools map to: axe (the scythes + Harvest Hoe),
+-- bluntweapon (Gardening Hammer), shortblade (Shears / Waterskins), spear
+-- (Gardening Shovel). Uses the runtime record so a GRIP-converted tool maps to
+-- the skill of whatever it is now. Returns nil when no Forager weapon is in hand.
+local function getForagerSkill()
+    local right = getRightHandWeapon()
+    if not right then return nil end
+    local rightRec = safeWeaponRecord(right)
+    if not rightRec then return nil end
+    local runtimeRec = runtimeWeaponRecord(right, rightRec)
+    if not runtimeRec then return nil end
+    local t = runtimeRec.type
+    if t == WTYPE.AxeOneHand        or t == WTYPE.AxeTwoHand        then return 'axe'         end
+    if t == WTYPE.BluntOneHand      or t == WTYPE.BluntTwoClose
+                                    or t == WTYPE.BluntTwoWide      then return 'bluntweapon' end
+    if t == WTYPE.ShortBladeOneHand                                 then return 'shortblade'  end
+    if t == WTYPE.LongBladeOneHand  or t == WTYPE.LongBladeTwoHand  then return 'longblade'   end
+    if t == WTYPE.SpearTwoWide                                      then return 'spear'       end
+    return nil
+end
+
 -- Return the effective target skill ID for the given stance, factoring in
 -- integration presence for modded-skill stances and dynamic weapon resolution
 -- for Dualist / Blademeister.
@@ -762,6 +831,7 @@ local function resolveStanceSkill(stanceId)
     if target.dynamic then
         if stanceId == 'dualist'      then return getDualistSkill()      end
         if stanceId == 'blademeister' then return getBlademeisterSkill() end
+        if stanceId == 'forager'      then return getForagerSkill()      end
         return nil
     end
 
@@ -792,6 +862,7 @@ local STANCE_SETTING_KEY = {
     brawler      = 'enableBrawler',
     commoner     = 'enableCommoner',
     apothecary   = 'enableApothecary',
+    forager      = 'enableForager',
 }
 
 -- Per-stance perk toggle lookup. Mirrors STANCE_SETTING_KEY above but uses
@@ -818,6 +889,7 @@ local PERK_SETTING_KEY = {
     brawler      = 'enableBrawlerPerks',
     commoner     = 'enableCommonerPerks',
     apothecary   = 'enableApothecaryPerks',
+    forager      = 'enableForagerPerks',
 }
 
 -- perksEnabledForStance forward-declared above (needed by ensurePerksInit closure).
@@ -910,7 +982,11 @@ local skillFramework = require('scripts.stance.player.skill_framework').new({
     effectivenessSkillBonus = effectivenessSkillBonus,
     getStanceEvasionBonus   = getStanceEvasionBonus,
     currentFortifiedBlockBonus = currentFortifiedBlockBonus,
+    currentBrawlerGauntletHhBonus = currentBrawlerGauntletHhBonus,
     getActivePrefixNotes    = getActivePrefixNotes,
+    -- Subtype-aware perk ladder accessor (Forager shows gardening vs harvesting
+    -- perks by the tool in hand); every other stance returns its single ladder.
+    getStancePerks          = getStancePerks,
     xpForStanceLevel        = xpForStanceLevel,
     resolveStanceSkill      = resolveStanceSkill,
     perksEnabledForStance   = perksEnabledForStance,
@@ -1042,6 +1118,7 @@ local hudModule = require('scripts.stance.player.hud').new({
     getActiveStance = function() return activeStanceId end,
     getStanceConfig = getStanceConfig,
     formatStanceName = formatStanceName,
+    getActivePrefixIcons = getActivePrefixIcons,
 })
 
 local updateHud          = hudModule.updateHud
@@ -1092,7 +1169,7 @@ local function checkCoreLevelPerkUnlocks()
     local stanceId = activeStanceId or 'commoner'
     local stance = getStanceConfig(stanceId)
     if stance then
-        for _, perk in ipairs(stance.perks) do
+        for _, perk in ipairs(getStancePerks(stanceId)) do
             if perk.level > lastAnnouncedCoreLevel and perk.level <= level then
                 table.insert(pendingPerkAnnouncements, {
                     stanceId = stanceId,
@@ -1455,6 +1532,14 @@ local function onUpdate(dt)
     -- shield equipped/removed without a stance change still updates this tick.
     refreshFortified()
 
+    -- Refresh the Brawler gauntlet tier (hand-armor weight class while unarmed)
+    -- on the same tick, BEFORE refreshEffectivenessModifiers folds its Hand-to-
+    -- Hand bonus into the skill modifier and before the tooltip/HUD render. Gated
+    -- to the Brawler stance + the enableBrawlerGauntlets setting inside the refresh,
+    -- so it is a cheap no-op for every other stance. The per-frame attack-speed
+    -- penalty (onFrame) reads the cached tier this sets.
+    refreshBrawlerGauntlet()
+
     -- Refresh the "sneaky" (crouched) flag on the same tick, so the "Sneaky"
     -- prefix is current for the tooltip/HUD render further down. Purely cosmetic
     -- (no skill/XP effect), so its placement relative to the effectiveness
@@ -1491,6 +1576,41 @@ local function onUpdate(dt)
     drainPerkAnnouncements()
     -- Update attribute bonuses, SF skill mods, and integration broadcasts.
     Perks.update(now)
+end
+
+-- ─── Per-frame: Brawler unarmed attack-speed penalty ──────────────────────
+-- OpenMW exposes no attack-speed actor stat, so the Brawler gauntlet speed
+-- penalty is delivered by scaling the playback speed of the "handtohand"
+-- animation group. For the bipedal player that group drives ONLY the unarmed
+-- attack (and equip) animations — movement and the raised-fists idle use
+-- unsuffixed base groups — so walking and standing are unaffected; only the
+-- swing slows. This mirrors how a weapon's own speed value scales the same
+-- attack animation in the engine.
+--
+-- animation.setSpeed is NOT sticky (it lasts only for the currently-playing
+-- sequence), and the main poll above runs at ~4 Hz — far too coarse to catch
+-- each swing — so the speed is re-applied every frame here while a penalty is
+-- active. The cached tier is computed in onUpdate (refreshBrawlerGauntlet); this
+-- handler only reads the resulting multiplier, so when no penalty applies it is
+-- a single comparison and an early return. Everything is pcall-guarded: any
+-- failure (missing group, API change) degrades to vanilla full-speed attacks.
+local function onFrame(dt)
+    if not readSetting('', 'enabled', true) then return end
+
+    -- 1.0 unless Brawler is active with hand armor whose tier carries a speed
+    -- debuff. >= 1.0 ⇒ nothing to slow; the non-sticky speed resumes its default
+    -- on its own, so no explicit reset is needed when the penalty ends.
+    local mult = currentBrawlerGauntletSpeedMult()
+    if mult >= 1.0 then return end
+
+    -- Only touch the group while an unarmed attack is actually playing: getSpeed
+    -- returns nil when the "handtohand" group is inactive, so this avoids calling
+    -- setSpeed on an idle group. The one-frame settle on swing start is imperceptible.
+    local active = false
+    pcall(function() active = animation.getSpeed(self, 'handtohand') ~= nil end)
+    if active then
+        pcall(animation.setSpeed, self, 'handtohand', mult)
+    end
 end
 
 -- ─── Persistence ──────────────────────────────────────────────────────────
@@ -1633,6 +1753,15 @@ return {
         -- Returns the Sanctuary bonus applied by the active (or named) stance.
         -- Scales from 0 at startLevel to stance.evasionBonus at maxLevel.
         getEvasionBonus      = function(id) return getStanceEvasionBonus(id or activeStanceId) end,
+        -- Brawler hand-armor (gauntlet) tradeoff readouts. Tier is one of
+        -- 'none' | 'light' | 'medium' | 'heavy' ('none' = bare fists). The HtH
+        -- bonus is additive Hand-to-Hand skill points; the speed debuff is the
+        -- fraction subtracted from the unarmed attack-animation speed multiplier.
+        -- All read 0 / 'none' unless Brawler is the active stance with hand armor
+        -- equipped and the feature enabled.
+        getBrawlerGauntletTier        = function() return getBrawlerGauntletTier() end,
+        getBrawlerGauntletHhBonus     = function() return currentBrawlerGauntletHhBonus() end,
+        getBrawlerGauntletSpeedDebuff = function() return currentBrawlerGauntletSpeedDebuff() end,
         -- Returns the target skill ID the bonus is applied to for the
         -- active (or named) stance. Nil when no bonus applies.
         getTargetSkill       = function(id) return resolveStanceSkill(id or activeStanceId) end,
@@ -1701,6 +1830,7 @@ return {
     engineHandlers = {
         onConsoleCommand = onConsoleCommand,
         onUpdate = onUpdate,
+        onFrame = onFrame,
         onSave = onSave,
         onLoad = onLoad,
         onInit = onLoad,

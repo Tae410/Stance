@@ -52,6 +52,7 @@ if r then return r end
 {
     id          = 'flailman',          -- unique lowercase id, used EVERYWHERE as the key
     displayName = 'Flailman',          -- shown in tooltip / HUD / console
+    icon        = 'icons/Stance/Flailman.dds',  -- HUD + skill-menu/tooltip icon (VFS path under icons/Stance/)
     attribute   = 'agility',           -- governing attribute (lowercase OpenMW attribute id)
     description  = 'A flail rewards timing over reach...',  -- tooltip flavor text
     integrations = {},                 -- list of integration ids this stance needs; {} = none
@@ -74,6 +75,7 @@ Rules:
 - **`id` is the canonical key.** It must be unique and is reused verbatim in every table in Steps 2–6. Keep it lowercase, no spaces.
 - **`attribute`** must be a valid lowercase OpenMW attribute id: `strength`, `intelligence`, `willpower`, `agility`, `speed`, `endurance`, `personality`, `luck`. This is what the chameleon Stance skill swaps to while your stance is active (unless the player disabled attribute-swap).
 - **`integrations`** lists integration ids the stance depends on (see the integrations table in the README). Leave `{}` for a pure-vanilla stance like Flailman.
+- **`icon`** is the VFS path to the stance's icon — a `.dds` placed in `icons/Stance/` (any size; it is scaled to fit). It is used in **two** places: the HUD indicator, and the foreground glyph of the core Stance skill's icon in the stats menu / hover tooltip (drawn on the shared combat-skill frame), so both always match. The path is the field value verbatim, so its filename need not match `id` or `displayName` (e.g. the `pitmen` stance uses `Pitman.dds`). If you omit `icon`, the HUD gracefully shows just the stance name and the skill keeps the frame-only icon for that stance.
 - **`perks`** must have exactly **four** entries at levels **25 / 50 / 75 / 100**. The `id` of each perk is what you'll test against in perk logic (Step 7). The `level` is the **core Stance skill** threshold, not your stance's own level.
 
 That's the data. Nothing here makes the stance *do* anything yet.
@@ -334,7 +336,7 @@ Keep cosmetic prefixes cosmetic; if a prefix also grants a mechanical bonus (the
 
 Per new stance id `myStance`:
 
-- [ ] **`config.lua`** — entry in `stances` with `id`, `displayName`, `attribute`, `description`, `integrations`, `category`, and four perks at 25/50/75/100.
+- [ ] **`config.lua`** — entry in `stances` with `id`, `displayName`, `icon`, `attribute`, `description`, `integrations`, `category`, and four perks at 25/50/75/100. Drop the icon `.dds` in `icons/Stance/`.
 - [ ] **`init.lua` `STANCE_SKILL_TARGET`** — target skill (or omit for no bonus; or `dynamic = true` + a `resolveStanceSkill` case).
 - [ ] **`player/skill_framework.lua`** — if the target is a vanilla skill not already in `VANILLA_EFF_SKILLS`, add it (or for a modded skill, add to `MODDED_EFF_SKILLS`).
 - [ ] **`player/resolver.lua`** — a classifier (`isMyStance`) if no existing helper fits.
