@@ -44,6 +44,10 @@ own events live in the `Stance_*` namespace.
 | **N'Garde** | Parry success → parry XP for the **active** stance, with a larger reward for a perfect parry (`ngarde_parrySelf` carries the `isPerfect` flag) |
 | **Gothic Style Knockout** | Brawler knockout-chance proc via `GKD_DoKnockdown` |
 | **Evasion!** | Surfaces the dodge/Sanctuary bonus in the tooltip with an "Evasion!" attribution (the two contributions track separate deltas and never interfere) |
+| **Sol's Timed Directional Attacks** | Detected via its settings section (`Settings_SolTimedDirAttacks`). Tempo-driven stances gain a passive weapon-skill bonus — *timed-directional-attack mastery* — ceilinged from STDA's own `buffBase` and scaled by stance level. See *Sol combat-mod mastery* below |
+| **Sol's Weighty Charged Attacks** | Detected via its settings section (`Settings_SolWeightyChargeAttacks`). Heavy, committed stances gain a passive weapon-skill bonus — *weighty-charged-attack mastery* — ceilinged from SWCA's own `buffBase`/`maxCharge` and the equipped weapon's weight, and scaled by stance level. See *Sol combat-mod mastery* below |
+| **Move Like This** | Detected via its settings section (`Settings_MoveLikeThis`). Each melee stance's signature directional move(s) are surfaced in its tooltip, and landing one of MLT's two attacker-notified moves (a critical thrust or a mobility slash) grants the active stance extra XP. See *Move Like This — weapon distinctiveness* below |
+| **Bardcraft** | Detected via its Skill Framework skill (`bardcraft`). Powers the **Muse** stance: idle performances activate Muse, and finishing a song grants a timed inspiration buff to the stance the song is associated with. See *Muse - the bard's stance* below |
 
 **Thrown / deployable alchemy** (all by Arcimaestro Antares; pure-content `.esp`s with no Lua)
 
@@ -88,10 +92,11 @@ own events live in the `Stance_*` namespace.
 
 The mod resolves the active stance every frame by walking a priority-ordered
 list of detection rules. **The first rule whose signal fires wins.** There are
-**19** stances.
+**21** stances (the numbered list below is illustrative; Muse is detection rule 0).
 
 | # | Stance | Governing | When it activates |
 |---|---|---|---|
+| 0 | Muse | Personality | Performing a song **idly** (a Bardcraft Practice performance). Sits above everything — while performing, weapons are sheathed, which would otherwise be Commoner |
 | 1 | Locksmith | Agility | Lockpick **or** probe readied in the right hand (via Use, not merely carried) |
 | 2 | Arcanist | Intelligence | Spellcasting stance active |
 | 3 | Reforger | Endurance | Armorer's repair hammer equipped, weapon stance up |
@@ -149,6 +154,109 @@ They compose, outermost-first, as **Sneaky → Fortified → element → base** 
 > shield-plus-fists, gets no prefix or bonus — "Fortified" requires a compatible
 > weapon. N'Garde parry XP now flows to whatever weapon stance is active.
 
+### Sol combat-mod mastery
+
+When either of Solthas's weapon-combat-buff mods is installed, stances whose
+fighting style fits earn a passive bonus to their **own weapon skill** — the
+stance's growing *mastery* of that mod's signature technique. Like the Evasion!
+integration, this is a delta-accounted bonus applied while the stance is active;
+it **compounds with** the Sol mod's own transient buff on separate deltas and
+never touches it. Neither Sol mod fires an event Stance! could hook, so the
+integration reads each mod's **own live settings** to size the bonus instead.
+
+- **Timed Directional Attacks (STDA)** — nimble, tempo-driven stances (Thief,
+  Soloist, Dualist, Guisarmier, Blademeister, and lightly Axeman / Mjölnir /
+  Zweihänder / Brawler). The bonus ceiling is `weight × STDA.buffBase` (read live
+  from STDA). Each stance names its signature directional attack — Chop / Slash /
+  Thrust — shown in the tooltip.
+- **Weighty Charged Attacks (SWCA)** — heavy, committed stances (Mjölnir,
+  Zweihänder, Axeman, Guisarmier, Soloist, Reforger). The ceiling mirrors SWCA's
+  own release-buff formula at full charge for the **equipped weapon's weight**
+  (`weight × ceil(SWCA.buffBase × (1 + √W) × SWCA.maxCharge)`, both read live from
+  SWCA, with `W` clamped by `solWeapWeightCap`) — so a heavier weapon in the same
+  stance gives a weightier bonus. Each stance names its signature blow (Smite,
+  Cleave, Set Spear, Power Thrust, Forge Blow).
+
+In both cases the bonus **scales with the stance's own level**, on the same
+linear ramp the effectiveness and evasion bonuses use: 0 at the start level
+rising to the full ceiling at level 100. A few weapons that play either way
+appear under both systems, weighted toward their dominant character; tool,
+activity, and caster stances have no affinity. The applicable stances, signature
+labels, and per-stance weights are all data in `config.solAffinity`. Each
+integration has its own toggle under **Integrations**, and the whole thing is
+read-only — neither Sol mod is ever written to, and the bonus is simply absent
+when its mod is not installed.
+
+### Move Like This — weapon distinctiveness
+
+[Move Like This](https://www.nexusmods.com/morrowind/mods/59154) gives every
+weapon type its own chop / slash / thrust behaviour — Cleave, Critical, Stagger,
+Armor Pierce, Stomp, First Strike, Shield Break, Mobility / Blind — which is
+exactly the per-weapon character Stance! is built around. The integration is
+**read-only**: Stance! never re-applies or alters Move Like This's effects. It
+ties the two mods together two ways:
+
+- **Signature move in the tooltip.** Each melee stance's signature directional
+  move(s) are listed in its tooltip (e.g. Soloist → *Thrust → Critical · Slash →
+  Cleave*; Axeman → *Chop → Shield Break · Slash → Cleave*). The mapping lives in
+  `config.mltSignature`. Dualist and Blademeister wield a varying weapon, so
+  theirs read *"varies with your weapon."*
+- **Signature-move XP.** Move Like This sends two events to the attacker when the
+  player lands them — a **critical thrust** and a **mobility slash**. Stance!
+  listens for both and credits the **active** stance (which is necessarily the
+  matching weapon stance), so landing your stance's signature move trains it a
+  little faster, on top of the ordinary hit XP. Each has its own toggle under
+  **Progression**. The other MLT effects (cleave, stagger, armor pierce, stomp,
+  first strike, shield break, blind) do not notify the attacker, so they carry no
+  dedicated XP source.
+
+Because Move Like This's *skill-scaled* effects — critical chance, stagger
+chance, mobility/blind magnitude, and cleave accuracy — all key off the
+attacker's **weapon skill**, the active stance's effectiveness and Sol mastery
+bonuses (which raise that weapon skill) already **sharpen these moves as the
+stance levels**, with no extra bookkeeping. Mastering a stance literally makes
+its signature Move-Like-This strike land harder and more often.
+
+### Muse - the bard's stance (Bardcraft)
+
+Bardcraft (nexusmods.com/morrowind/mods/56814) turns music into a gameplay loop;
+**Muse** turns that music into combat preparation. Muse is a twentieth stance
+that is active **only while you perform a song idly** - a Bardcraft *Practice*
+performance, played for yourself rather than for a venue or crowd. It is
+governed by **Personality** and has **no perks**.
+
+**Every song buffs a specific stance.** Each song maps, consistently, to one
+combat stance: curated overrides match first by song id, then by a keyword in
+the title (a *war* ballad -> Zweihander, a *hunt* song -> Huntsman, a *drinking*
+tune -> Brawler, ...); any other song is hashed deterministically onto the
+buffable list, so the same song always inspires the same stance. The mapping is
+in `config.muse` (`songOverrides` + `buffableStances`).
+
+**Notes become buff time.** While you play, every note Bardcraft reports feeds a
+timer: a **clean note adds** `successSeconds` and drains **2 fatigue**; a
+**fumbled note subtracts** `failSeconds` and drains **4 fatigue**. When the song
+ends, the accumulated time (floored at zero) becomes the **duration** of an
+*inspiration* buff applied to the associated stance - a temporary bonus to that
+stance's weapon skill (magnitude scales with Muse level), delivered through the
+same delta-accounted path as every other Stance bonus, so it stacks cleanly.
+
+**Muse levels** from carrying idle songs to completion and from successfully
+administering buffs. It has no perks; instead, **each Muse milestone (every 25
+levels) raises the loop allowance by +1** - how many of a looping song's repeats
+may feed the buff timer (base 1, up to 5). Loop boundaries are read from
+Bardcraft's bar events.
+
+**Tooltips.** When a buffed stance is active, its tooltip shows the live
+inspiration - `Muse: +N <skill> from '<song>'  (M:SS left)` - counting down in
+real time, plus the known songs that inspire it. The Muse stance's own tooltip
+shows the in-progress performance: the song, the stance it will buff, the
+running buffer, and the loop / note tally.
+
+Everything is read-only with respect to Bardcraft - Stance only listens to its
+events (`BO_ConductorEvent` for start/loop/stop, `BC_PerformerNoteHandled` for
+each note). Toggle the whole feature with the **Bardcraft** integration, and the
+stance itself with **Enable Muse**.
+
 ## How leveling works
 
 Two layers work together:
@@ -165,7 +273,10 @@ bonus to that stance's target skill), shown in the tooltip.
 in the character sheet (under the **Stance** subsection, via Stats Window
 Extender) renames itself **live** to the decorated active stance — sheathe your
 blade and it reads `Commoner`; draw a longsword behind a shield while crouched
-and it reads `Sneaky Fortified Soloist`. Whenever the active stance gains XP,
+and it reads `Sneaky Fortified Soloist`. Its **icon** tracks the stance too:
+the same `icons/Stance/<X>.dds` glyph the HUD shows is drawn on the combat-skill
+frame, so the stats-menu row and its hover tooltip always match the HUD.
+Whenever the active stance gains XP,
 the core skill gains **half** of that amount and levels **independently**. So each individual stance levels roughly twice as fast
 as the core skill, and the core skill is a running measure of your overall
 stance mastery that never resets when you switch.
@@ -205,6 +316,10 @@ only while that stance is enabled. Every source has its own toggle under
 | Enemy burns in your oil (per tick) | credited to Apothecary | 0.5 |
 | Disenchant (Disenchanting) | in Arcanist / Thaumaturge | 1.5 (+ per-point bonus) |
 | Transcribe a spell (Transcribe) | in Arcanist / Thaumaturge | 3.0 |
+| Idle song completed (Bardcraft) | in Muse | 3.0 |
+| Inspiration buff administered (Bardcraft) | in Muse | 2.0 |
+| Move Like This critical thrust | in any crit-capable stance (Soloist / Zweihänder / Thief / Brawler) | 1.5 |
+| Move Like This mobility slash | in Thief / Brawler (when that slash effect is set) | 0.75 |
 
 ## Perks
 
@@ -233,9 +348,18 @@ that stance.
 
 ## HUD indicator
 
-The HUD shows **only** the name of the currently active stance (with any active
-prefixes — *Sneaky / Fortified / Blazed-Frozen-Electrified*). No level, no other
-decoration — just the name in the corner of the screen.
+The HUD shows the **icon** of the currently active stance, with the stance
+**name** beneath it (including any active prefixes — *Sneaky / Fortified /
+Blazed-Frozen-Electrified*). Each of the 19 stances has its own icon, shipped
+in `icons/Stance/` and wired through the stance's `icon` field in `config.lua`;
+the indicator swaps icon and name automatically as the active stance changes.
+While you are **crouched** (the *Sneaky* prefix is active), a small Sneaky
+badge is overlaid on the bottom-right corner of the stance icon — the icon
+counterpart of the `Sneaky …` name prefix — and it disappears the moment you
+stand. The name can be hidden for an icon-only indicator, and the icon size is
+adjustable (the name scales with it, and so does the badge). If a stance is
+ever missing an icon, the indicator falls back to showing just the name so it
+is never blank.
 
 **Draggable.** Open any vanilla menu (inventory, map, magic, stats) and
 click-drag the indicator to any position on screen. The position is saved
@@ -262,7 +386,8 @@ focused groups:
    global XP multiplier (0–500%).
 5. **Integrations** — one toggle per external-mod hookup, grouped by category.
    Disabling an integration falls back to native detection where possible.
-6. **HUD Indicator** — show toggle, lock toggle, text size, X / Y position.
+6. **HUD Indicator** — show toggle, show-stance-name toggle (icon-only when
+   off), lock toggle, indicator (icon) size, X / Y position.
 7. **Tooltip** — what appears inside the dynamic Stance-skill tooltip
    (mechanic details, perk ladder, unlocked-only filter, all-stances summary).
 8. **Notifications** — perk-unlock popup style (Disabled / Popup / Message),
