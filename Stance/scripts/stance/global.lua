@@ -199,7 +199,28 @@ local function onHazardHit(payload)
     end)
 end
 
--- ─── Perk on-hit effect application ───────────────────────────────────────
+-- Bardcraft fires 'BC_PerformerNoteHandled' as a GLOBAL event for every note a
+-- performer plays (carrying { success, performer, mod }), but NOT for Ambient
+-- performances. The Muse stance lives in the player script, so we filter to the
+-- player's own notes and relay them as 'Stance_BardNote' { success } for the
+-- Muse buff-timer ledger. (PerformStart/Stop reach the player directly as
+-- BO_ConductorEvent, so only the per-note signal needs this global bounce.)
+local function onBardPerformerNote(payload)
+    if type(payload) ~= 'table' then return end
+    local player = getPlayer()
+    if not player then return end
+    local performer = payload.performer
+    if not performer then return end
+    -- Only the player's own notes drive the Muse ledger.
+    local sameAsPlayer = false
+    pcall(function() sameAsPlayer = (performer.id == player.id) end)
+    if not sameAsPlayer then return end
+    pcall(function()
+        player:sendEvent('Stance_BardNote', { success = payload.success == true })
+    end)
+end
+
+
 -- Dispatched from perks.lua's sendEffect() helper. We are in global scope
 -- here, which means we can write to types.Actor.activeEffects on any actor
 -- in the world — the player script cannot do this because it lacks world
@@ -273,7 +294,81 @@ end
 -- global scope is the opt-in Stance_PlayerValidatedKill event below, for
 -- external scripts that have already confirmed a player kill themselves.
 
+-- ─── Gardening / Farming progress bridge (Forager XP) ──────────────────────
+-- The Gardening and Farming mod is pure MWScript+ESP content; on OpenMW its
+-- scripts still run, and it tracks ALL gardening progress in one MWScript global
+-- float, `tribGardner`. That global is raised by the mod itself: +0.1 each time
+-- the player PLANTS a seed (drops it — see trib_<crop>_seed) and +0.2 each time
+-- the player HARVESTS a grown plant with the Harvest Hoe or a Scythe (see
+-- trib_<crop>_plant). Reading runtime MWScript globals requires world scope
+-- (world.mwscript.getGlobalVariables()), which only exists in this global
+-- script — the player script can't see it — so we watch the value here and
+-- forward each increase to the player as Stance_GardeningProgress { delta }.
+-- The player credits Forager delta*gardeningProgressScale XP, so planting and
+-- harvesting both feed Forager exactly as they feed the source mod's own skill.
+--
+-- Robustness:
+--   * First read each session only baselines (no grant) — gardening done in a
+--     previous session, already reflected in the loaded global, isn't re-paid.
+--   * A decrease (loading an earlier save in a fresh Lua state, or any reset)
+--     silently re-baselines; we never grant on a decrease.
+--   * If the mod isn't installed the global is unreadable/absent → cur is nil →
+--     we simply never forward anything. All reads are pcall-guarded.
+local lastGardnerValue = nil
+local gardenPollAccum  = 0
+local GARDEN_POLL_INTERVAL = 0.5   -- seconds between polls; plant/harvest are slow actions
+
+local function readTribGardner()
+    local gv = nil
+    local ok = pcall(function() gv = world.mwscript.getGlobalVariables() end)
+    if not ok or gv == nil then return nil end
+    -- MWScript globals are case-insensitive; the record id is 'tribGardner'.
+    -- Try the canonical spelling, then a lowercase fallback, each guarded.
+    local v = nil
+    ok = pcall(function() v = gv.tribGardner end)
+    if ok and type(v) == 'number' then return v end
+    ok = pcall(function() v = gv.tribgardner end)
+    if ok and type(v) == 'number' then return v end
+    return nil
+end
+
+local function onUpdate(dt)
+    -- Respect the master enable mirror; skip all work when the mod is off.
+    if readRuntime('enabled') ~= true then return end
+
+    gardenPollAccum = gardenPollAccum + (dt or 0)
+    if gardenPollAccum < GARDEN_POLL_INTERVAL then return end
+    gardenPollAccum = 0
+
+    local cur = readTribGardner()
+    if cur == nil then return end            -- mod absent / global unreadable
+
+    if lastGardnerValue == nil then          -- first sighting this session: baseline only
+        lastGardnerValue = cur
+        return
+    end
+
+    if cur > lastGardnerValue then
+        local delta = cur - lastGardnerValue
+        lastGardnerValue = cur
+        local player = getPlayer()
+        if player then
+            pcall(function()
+                player:sendEvent('Stance_GardeningProgress', { delta = delta })
+            end)
+        end
+        debugLog('Gardening progress +' .. tostring(delta) .. ' forwarded to player.',
+            'debugIntegrationMessages')
+    elseif cur < lastGardnerValue then
+        -- Value went down (earlier save loaded, external reset): re-baseline, no grant.
+        lastGardnerValue = cur
+    end
+end
+
 return {
+    engineHandlers = {
+        onUpdate = onUpdate,
+    },
     eventHandlers = {
         Stance_UpdateRuntimeSettings = onUpdateRuntimeSettings,
         Stance_RequestInit           = onRequestInit,
@@ -307,5 +402,9 @@ return {
         -- Perk on-hit effect application (dispatched by perks.lua via
         -- core.sendGlobalEvent so we have world scope to write activeEffects).
         Stance_PerkEffect            = onPerkEffect,
+
+        -- Bardcraft per-note signal (global) → relayed to the player as
+        -- Stance_BardNote for the Muse buff-timer ledger (player notes only).
+        BC_PerformerNoteHandled      = onBardPerformerNote,
     },
 }

@@ -21,6 +21,7 @@
         getStanceConfig    — function(stanceId) → stance table | nil
         integrationEnabled — function(integrationId) → boolean
         getActiveStance    — function() → activeStanceId (string|nil)
+        getStanceLevel     — function(stanceId) → level (int)
 ]]
 
 local M = {}
@@ -36,6 +37,7 @@ function M.new(ctx)
     local getStanceConfig    = ctx.getStanceConfig
     local integrationEnabled = ctx.integrationEnabled
     local getActiveStance    = ctx.getActiveStance
+    local getStanceLevel     = ctx.getStanceLevel or function() return config.startLevel or 5 end
 
     -- ─── Spellsword imbue prefix (purely cosmetic) ────────────────────────────
     -- When the Spellsword mod has an active weapon imbuement, formatStanceName()
@@ -89,6 +91,81 @@ function M.new(ctx)
     -- declared here so formatStanceName captures it as an upvalue. Display-only.
     local sneakyActive = false
 
+    -- ─── Smoking prefix + bonus (Hackle-Lo pipe) ─────────────────────────────
+    -- Two distinct transient states, both recomputed every poll tick and never
+    -- saved:
+    --
+    --   * pipeEquipped — a Hackle-Lo pipe variant is in the off-hand (CarriedLeft)
+    --     slot. Drives the cosmetic "Smoking" name prefix. The prefix shows on the
+    --     active stance for ANY stance whose left hand is free to hold the pipe;
+    --     Brawler (fists) and Arcanist (readied spell) are excluded because they
+    --     cannot visually hold it (SMOKING_EXCLUDED_STANCES).
+    --
+    --   * smokingActive — the player is ACTIVELY, SUCCESSFULLY smoking: the pipe is
+    --     equipped AND a Hackle-Lo smoke potion is currently in effect AND the
+    --     active stance is allowed to smoke. ONLY this flag grants the flat +10
+    --     weapon-skill bonus. The pipe mod's own script consumes a hackle-lo leaf
+    --     on a successful smoke and applies a `pe_hackle-lo_smoke*` potion (an ALCH
+    --     with a 60 s+ duration); the presence of that potion in the player's active
+    --     spells is the authoritative "smoked a leaf successfully" signal. The
+    --     no-leaf fallback potion (`pe_hackle-lo_smoke_dagoth_empty`) is deliberately
+    --     NOT in the set, so puffing the dried resins of an empty pipe shows the
+    --     prefix but grants no bonus.
+    --
+    -- Because smokingActive requires the pipe to STILL be equipped, putting the pipe
+    -- away clears BOTH the prefix and the bonus on the very next tick — the smoke
+    -- potion's lingering magic effects no longer keep the bonus alive. There is no
+    -- separate lingering timer.
+    local SMOKING_EXCLUDED_STANCES = {
+        brawler  = true,   -- unarmed: hands are fists, cannot hold the pipe
+        arcanist = true,   -- readied spell occupies the casting hand
+    }
+    local HACKLE_LO_PIPE_IDS = {
+        ['hackle-lo pipe']                  = true,
+        ['hackle-lo pipe - mushroom']       = true,
+        ['hackle-lo pipe - cherrywood']     = true,
+        ['hackle-lo pipe - brass']          = true,
+        ['hackle-lo pipe - stalhrim']       = true,
+        ['hackle-lo pipe - silver']         = true,
+        ['hackle-lo pipe - glass']          = true,
+        ['hackle-lo pipe - wood']           = true,
+        ['hackle-lo pipe - ashlander']      = true,
+        ['hackle-lo pipe - dagoth']         = true,
+        ['hackle-lo pipe - windwalker']     = true,
+        ['hackle-lo pipe - peace']          = true,
+        ['hackle-lo pipe - ancestral']      = true,
+        ['hackle-lo pipe - carvedmushroom'] = true,
+        ['hackle-lo pipe - dunmeri glass']  = true,
+    }
+    -- Smoke potions the pipe mod applies on a SUCCESSFUL smoke (a hackle-lo leaf
+    -- was present and consumed). The no-leaf "_empty" fallback is intentionally
+    -- absent — it represents smoking dried resins with no leaf, which must NOT
+    -- grant the bonus. Matched case-insensitively against active-spell source ids.
+    local SMOKE_POTION_IDS = {
+        ['pe_hackle-lo_smoke']            = true,
+        ['pe_hackle-lo_smoke_ancestral']  = true,
+        ['pe_hackle-lo_smoke_dagoth']     = true,
+        ['pe_hackle-lo_smoke_peace']      = true,
+        ['pe_hackle-lo_smoke_vip']        = true,
+        ['pe_hackle-lo_smoke_windwalker'] = true,
+    }
+    -- Per-potion Speed-drain magnitude the pipe mod's smoke applies (verified
+    -- against the Hackle-Lo Pipe ESP). Only the base/cheap pipe smoke drains
+    -- Speed — Drain Speed 50 for 60 s, the documented "cheaper pipes damage your
+    -- speed" downside — and at magnitude 50 it floors a Speed≤50 character to 0,
+    -- which immobilises the player. Each value here is the amount of Speed we ADD
+    -- back while that smoke is active; setting it equal to the drain (50) fully
+    -- cancels the penalty so smoking never saps movement. To keep a milder penalty
+    -- instead, set the value BELOW the drain (e.g. 40 leaves a net −10 Speed while
+    -- smoking); to restore the pipe's full original penalty, set 0 or remove the
+    -- entry. Pipes not listed here drain no Speed in the first place.
+    local SMOKE_SPEED_DRAIN = {
+        ['pe_hackle-lo_smoke'] = 50,
+    }
+    local pipeEquipped     = false   -- Hackle-Lo pipe in the off-hand (drives prefix)
+    local smokingActive    = false   -- actively smoking a leaf (drives +10 bonus)
+    local smokeSpeedContrib = 0      -- our own Speed-modifier delta (offsets the drain)
+
     local function formatStanceName(stanceId)
         local stance = getStanceConfig(stanceId)
         if not stance then return 'Unknown' end
@@ -105,6 +182,13 @@ function M.new(ctx)
         -- e.g. "Sneaky Fortified Blazed Soloist".
         if sneakyActive then
             name = 'Sneaky ' .. name
+        end
+        -- Smoking outermost of all: shown whenever a Hackle-Lo pipe is equipped,
+        -- on any stance that can hold it (Brawler/Arcanist excluded). The bonus
+        -- (smokingActive) is separate — the prefix only needs the pipe in hand.
+        -- e.g. "Smoking Sneaky Fortified Soloist".
+        if pipeEquipped and not SMOKING_EXCLUDED_STANCES[stanceId] then
+            name = 'Smoking ' .. name
         end
         return name
     end
@@ -395,7 +479,147 @@ function M.new(ctx)
         return mult
     end
 
-    -- True when the player is crouched (sneaking). OpenMW exposes the sneak state
+    -- ─── Smoking prefix + bonus computation ───────────────────────────────────
+
+    -- True when any Hackle-Lo pipe variant is equipped in the off-hand (Light)
+    -- slot. Pipes are LIGH records; the check uses types.Light.objectIsInstance to
+    -- distinguish them from weapons, shields, and torches, then validates the
+    -- record id against the known pipe set. Mirrors the shield detection pattern
+    -- in getEquippedShield — pcall-guarded throughout so a missing types.Light
+    -- can never raise here.
+    local function isHackleLoPipeEquipped()
+        if not types.Actor.EQUIPMENT_SLOT then return false end
+        local ok, equipment = pcall(types.Actor.getEquipment, self)
+        if not ok or not equipment then return false end
+        local item = equipment[types.Actor.EQUIPMENT_SLOT.CarriedLeft]
+        if not item then return false end
+        -- Must be a Light item (pipes are LIGH records, not weapons or armour).
+        local okLight, isLight = pcall(function()
+            return types.Light and types.Light.objectIsInstance(item)
+        end)
+        if not okLight or not isLight then return false end
+        -- Match against the known pipe record id set (case-insensitive).
+        local recordId = nil
+        pcall(function() recordId = item.recordId end)
+        if not recordId then return false end
+        return HACKLE_LO_PIPE_IDS[recordId:lower()] == true
+    end
+
+    -- Whether the ACTIVE stance is allowed to smoke — i.e. its left hand is free
+    -- to hold the pipe. Brawler (fists) and Arcanist (readied spell) are excluded
+    -- because they cannot visually wield the pipe, so they get neither the prefix
+    -- nor the bonus. Every other stance qualifies.
+    local function activeStanceCanSmoke()
+        local sid = getActiveStance()
+        return sid ~= nil and not SMOKING_EXCLUDED_STANCES[sid]
+    end
+
+    -- Scan the player's active spells ONCE and report two things:
+    --   smoking    — whether a SUCCESSFUL-smoke potion (`pe_hackle-lo_smoke*`,
+    --                excluding the no-leaf "_empty" fallback) is in effect. The
+    --                pipe mod applies one only after consuming a hackle-lo leaf,
+    --                so its presence is the authoritative "smoked a leaf" signal.
+    --   speedDrain — the total Speed-drain magnitude those smoke potions impose
+    --                (summed from SMOKE_SPEED_DRAIN), so we can neutralise it.
+    -- Consumed potions appear in Actor.activeSpells keyed by the potion's record
+    -- id (params.id). Fully pcall-guarded: if the API is unavailable or changes
+    -- shape this degrades to (false, 0) rather than raising.
+    local function scanActiveSmoke()
+        local active = nil
+        local ok = pcall(function() active = types.Actor.activeSpells(self) end)
+        if not ok or not active then return false, 0 end
+        local smoking, speedDrain = false, 0
+        pcall(function()
+            for _, params in pairs(active) do
+                local id = params and params.id
+                if type(id) == 'string' then
+                    local lid = id:lower()
+                    if SMOKE_POTION_IDS[lid] then
+                        smoking    = true
+                        speedDrain = speedDrain + (SMOKE_SPEED_DRAIN[lid] or 0)
+                    end
+                end
+            end
+        end)
+        return smoking, speedDrain
+    end
+
+    -- Apply our Speed-modifier contribution using the engine-native attribute
+    -- `.modifier` field and the same delta formula the perks system uses
+    -- (new = current - our_previous + our_new). Because every owner only adjusts
+    -- the portion it tracks, this stacks cleanly with the pipe's own Drain Speed
+    -- and with any perk/spell Speed modifiers without double-counting or stomping.
+    -- `newContrib` is the amount we ADD to Speed (a positive value cancels an equal
+    -- drain). pcall-guarded so a missing stats accessor can never raise here.
+    local function applySmokeSpeedOffset(newContrib)
+        if newContrib == smokeSpeedContrib then return end
+        local attrTable = types.Actor.stats and types.Actor.stats.attributes
+        if not attrTable or not attrTable.speed then return end
+        local stat = nil
+        pcall(function() stat = attrTable.speed(self) end)
+        if not stat then return end
+        local curMod = 0
+        pcall(function() curMod = stat.modifier or 0 end)
+        pcall(function() stat.modifier = curMod - smokeSpeedContrib + newContrib end)
+        smokeSpeedContrib = newContrib
+    end
+
+    -- Reset our Speed-offset delta tracker. Called from init.lua's onLoad because
+    -- the engine zeroes all active effects (and the attribute modifiers they drive)
+    -- on load; our tracker must match or the first refresh would compute its delta
+    -- against a stale baseline and over-apply. Mirrors clearEvasionBonus.
+    local function clearSmokingSpeedOffset()
+        smokeSpeedContrib = 0
+    end
+
+    -- Refresh the cached Smoking state once per poll tick.
+    --   pipeEquipped  — a Hackle-Lo pipe is in the off-hand (drives the prefix).
+    --   smokingActive — pipe equipped AND a smoke potion active AND the active
+    --                   stance can smoke (drives the +10 weapon-skill bonus).
+    -- Separately, the pipe's Speed drain is neutralised for as long as the smoke
+    -- effect itself lasts — independent of pipe-equipped state and stance, because
+    -- the drain is a potion effect that persists for its full duration once a leaf
+    -- is smoked (so putting the pipe away does not re-expose it). No lingering
+    -- timer governs the prefix/bonus: the moment the pipe leaves the off-hand both
+    -- of those clear on the next tick. Logs only on transition.
+    local function refreshSmoking()
+        local prevPipe  = pipeEquipped
+        local prevSmoke = smokingActive
+
+        pipeEquipped = isHackleLoPipeEquipped()
+
+        local smokeActive, speedDrain = scanActiveSmoke()
+        smokingActive = pipeEquipped
+            and activeStanceCanSmoke()
+            and smokeActive
+
+        -- Cancel the pipe's Speed drain (positive offset == drain magnitude).
+        applySmokeSpeedOffset(speedDrain)
+
+        if pipeEquipped ~= prevPipe or smokingActive ~= prevSmoke then
+            debugLog(string.format('Smoking -> pipe=%s active=%s (speedOffset=%d)',
+                tostring(pipeEquipped), tostring(smokingActive), speedDrain),
+                'debugDetectionMessages')
+        end
+    end
+
+    -- Additive weapon-skill bonus granted while ACTIVELY smoking. Fixed at +10;
+    -- 0 unless smokingActive (pipe equipped, a leaf was smoked, and the active
+    -- stance is allowed to smoke). Consumed by refreshEffectivenessModifiers in
+    -- skill_framework.lua, which folds it into the active stance's target-skill
+    -- contribution through the same native delta-modifier path used for the other
+    -- effectiveness bonuses.
+    local function currentSmokingWeaponBonus()
+        return smokingActive and 10 or 0
+    end
+
+    -- Public read of the cached Smoking flag (the bonus/effects state — pipe held
+    -- AND actively smoking), for UI consumers.
+    local function isSmokingActive()
+        return smokingActive == true
+    end
+
+
     -- of the player's own actor as the boolean self.controls.sneak ("If true -
     -- sneak"); this reflects the resolved crouch state (hold OR toggle sneak) on
     -- 0.49+. There is no core "isSneaking" query, so this is the canonical signal.
@@ -475,32 +699,51 @@ function M.new(ctx)
                 tierName, fmtNum(currentBrawlerGauntletHhBonus()),
                 math.floor(currentBrawlerGauntletSpeedDebuff() * 100 + 0.5))
         end
+        -- Smoking: shown while a Hackle-Lo pipe is equipped (the prefix only needs
+        -- the pipe in hand). The +10 bonus applies only while actively smoking a
+        -- leaf (smokingActive); merely holding the pipe prompts the player to smoke.
+        if pipeEquipped and not SMOKING_EXCLUDED_STANCES[stanceId] then
+            if smokingActive then
+                notes[#notes + 1] =
+                    "Smoking: hackle-lo smoke sharpens your focus — +10 to this stance's weapon skill while you keep smoking."
+            else
+                notes[#notes + 1] =
+                    "Smoking: a Hackle-Lo pipe is at the ready. Smoke a hackle-lo leaf with it to gain +10 to this stance's weapon skill."
+            end
+        end
         return notes
     end
 
     -- ─── Prefix icons (for the HUD, rendered BESIDE the stance icon) ──────────
     -- VFS icon paths for each name-prefix decoration. The imbue element maps to
-    -- its element icon; Sneaky and Fortified have fixed icons. All four assets
+    -- its element icon; Smoking, Sneaky and Fortified have fixed icons. All assets
     -- live under icons/Stance/.
     local IMBUE_ICON_BY_PREFIX = {
         Blazed      = 'icons/Stance/Fire_Imbue.dds',
         Frozen      = 'icons/Stance/Frost_Imbue.dds',
         Electrified = 'icons/Stance/Shock_Imbue.dds',
     }
+    local SMOKING_ICON_PATH   = 'icons/Stance/Smoking.dds'
     local SNEAKY_ICON_PATH    = 'icons/Stance/Sneaky.dds'
     local FORTIFIED_ICON_PATH = 'icons/Stance/Fortified.dds'
 
     -- Ordered list of VFS icon paths for the name-prefix decorations currently
     -- active on the ACTIVE stance, for the HUD to render in a row next to the
     -- stance icon. Conditions mirror formatStanceName / getActivePrefixNotes
-    -- EXACTLY, and the order matches the name's reading order (Sneaky, Fortified,
-    -- imbue), so the icons and the decorated name can never disagree. Only the
-    -- active stance is decorated (a non-active id returns an empty list). Returns
-    -- paths only — the HUD owns texture loading and silently skips any that fail,
-    -- so a missing asset simply means that one icon is absent.
+    -- EXACTLY, and the order matches the name's reading order (Smoking, Sneaky,
+    -- Fortified, imbue), so the icons and the decorated name can never disagree.
+    -- Only the active stance is decorated (a non-active id returns an empty list).
+    -- Returns paths only — the HUD owns texture loading and silently skips any
+    -- that fail, so a missing asset simply means that one icon is absent.
     local function getActivePrefixIcons(stanceId)
         if stanceId ~= getActiveStance() then return {} end
         local icons = {}
+        -- Smoking outermost (leftmost in the name): shown whenever a Hackle-Lo
+        -- pipe is held on a stance that can wield it. Mirrors the prefix exactly
+        -- (pipe equipped, not Brawler/Arcanist) — independent of the +10 bonus.
+        if pipeEquipped and not SMOKING_EXCLUDED_STANCES[stanceId] then
+            icons[#icons + 1] = SMOKING_ICON_PATH
+        end
         if sneakyActive then
             icons[#icons + 1] = SNEAKY_ICON_PATH
         end
@@ -564,6 +807,11 @@ function M.new(ctx)
         currentFortifiedBlockBonus = currentFortifiedBlockBonus,
         getActivePrefixNotes       = getActivePrefixNotes,
         getActivePrefixIcons       = getActivePrefixIcons,
+        -- Smoking prefix (pipe equipped) + bonus (actively smoking a leaf):
+        refreshSmoking             = refreshSmoking,
+        clearSmokingSpeedOffset    = clearSmokingSpeedOffset,
+        currentSmokingWeaponBonus  = currentSmokingWeaponBonus,
+        isSmokingActive            = isSmokingActive,
         -- Brawler gauntlet tradeoff (hand-armor weight class while unarmed):
         refreshBrawlerGauntlet            = refreshBrawlerGauntlet,
         getBrawlerGauntletTier            = function() return brawlerGauntletTier end,

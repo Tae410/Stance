@@ -11,6 +11,8 @@ SettingEnableAttributeSwap: Dynamic Governing Attribute
 SettingEnableAttributeSwapDescription: When enabled, the Stance skill's governing attribute swaps to match the active stance (Strength for Brawler, Intelligence for Arcanist, and so on). When disabled, the skill is always governed by Luck.
 SettingAnnounceStanceChange: Announce Stance Changes
 SettingAnnounceStanceChangeDescription: Show a brief message every time the active stance changes. Useful for tracking fast weapon swaps; redundant if you rely on the HUD indicator.
+SettingAnnounceMuseSummary: Muse Song Summary
+SettingAnnounceMuseSummaryDescription: Show a message box when you finish performing a song idly, summarising the inspiration buff it produced — which stance it inspires, the bonus, how long it lasts, and how cleanly you played. Turn off to perform without the end-of-song popup.
 
 GroupStancesName: Stances
 GroupStancesDescription: Per-stance on/off toggles, ordered top-to-bottom by detection priority. The first stance whose conditions match becomes active; disabled stances are skipped over.
@@ -18,6 +20,8 @@ SettingEnableLocksmith: Enable Locksmith
 SettingEnableLocksmithDescription: Active when the player has a lockpick OR a probe actively equipped (readied via the Use action — not just sitting in inventory). Either tool alone is enough to trigger the stance. Triggers regardless of weapon stance. Governed by Agility (matching vanilla Security). Perks add Security skill, less probe breakage, Sneak skill, and a lock-difficulty capstone.
 SettingEnableCommoner: Enable Commoner
 SettingEnableCommonerDescription: Active when weapons are sheathed with no lockpicks/probes — the everyday-life fallback stance. Governed by Luck. Perks add Mercantile, Speechcraft, and disposition bonuses.
+SettingEnableMuse: Enable Muse
+SettingEnableMuseDescription: "Active only while performing a song idly (a Bardcraft Practice performance). Finishing a song weaves a timed inspiration buff into the stance the song is associated with, scaled by how many notes you played cleanly. Governed by Personality. Requires the Bardcraft integration. No perks — instead, each Muse milestone (every 25 levels) lets one more loop of a song feed the buff."
 SettingEnableArcanist: Enable Arcanist
 SettingEnableArcanistDescription: Active in spellcasting stance. Governed by Intelligence. Interlopes with Incantation and Meditation Skill.
 SettingEnableReforger: Enable Reforger
@@ -58,6 +62,8 @@ SettingEnableApothecary: Enable Apothecary
 SettingEnableApothecaryDescription: Active whenever a Thrown Concoction is equipped as your weapon (the concoctions from the Thrown Concoctions mod are thrown weapons). Governed by Intelligence and boosts Alchemy. Levels only when a hurled concoction lands on an enemy. Requires the Thrown Concoctions mod. With the integration off, concoctions are treated as ordinary thrown weapons (the Twirler stance) instead.
 SettingEnableForager: Enable Forager
 SettingEnableForagerDescription: Active when any Gardening and Farming tool or weapon is equipped (Gardening Hammer/Shovel/Shears/Waterskin, Harvest Hoe/Scythe, or an Imperial/Ivory/Glass/Daedric Farming Scythe). Governed by Intelligence; the effectiveness bonus follows whichever skill the tool in hand uses (axe, blunt, short blade or spear). The Forager carries TWO perk ladders — a gardening set and a harvesting set — and shows/applies the one matching the tool type currently held. Requires the Gardening and Farming mod. With this off, the tools fall through to their normal weapon-type stance.
+SettingEnableForagerGardeningXp: Forager — Gardening XP
+SettingEnableForagerGardeningXpDescription: When on, the Forager also earns XP from the Gardening and Farming mod itself — every seed you plant and every plant you harvest with the Harvest Hoe or a Scythe. Harvesting is worth twice as much as planting, mirroring the source mod's own progress (a harvest is worth about as much as mining an ore). Credited to the Forager whatever you are wielding, since planting only needs you to drop a seed. Turn this off to level the Forager from combat alone. Has no effect without the Gardening and Farming mod installed.
 
 GroupPerksName: Perks
 GroupPerksDescription: Toggle perks per stance or all at once. Disabled perks do not fire their effects, but the stance still gains XP and levels normally. Stance order matches the Stances group for easy cross-reference.
@@ -152,6 +158,14 @@ SettingIntegrateGRIP: GRIP
 SettingIntegrateGRIPDescription: Read GRIP's weapon-conversion maps so a GRIP-converted weapon classifies by its original type (a 2H weapon converted to 1H still triggers Zweihänder, and so on).
 SettingIntegrateBlademeister: Blademeister
 SettingIntegrateBlademeisterDescription: Detect Felthorn (the shapeshifting Daedra weapon from the Blademeister mod) by its sd_ record-id prefix. When this integration is on and Felthorn is equipped, the Blademeister stance activates regardless of the underlying weapon type Felthorn has transformed into. Disable this if you want Felthorn forms to classify by their underlying weapon type (claymore → Zweihänder, rapier → Soloist, etc.) instead.
+SettingIntegrateSolTimedDirAttacks: "Sol's Timed Directional Attacks"
+SettingIntegrateSolTimedDirAttacksDescription: "Detect Sol's Timed Directional Attacks (STDA) via its settings section (Settings_SolTimedDirAttacks). When present, tempo-driven melee stances (Thief, Soloist, Dualist, Guisarmier, Blademeister, Axeman, Mjölnir, Zweihänder, Brawler) gain a passive bonus to their own weapon skill — their mastery of the well-timed directional attack. The bonus is ceilinged from STDA's own 'buffBase' setting and scales with the stance's level (0 at the start level rising to the full ceiling at level 100). Read-only; STDA is never written to, and the bonus is simply absent when STDA is not installed."
+SettingIntegrateSolWeightyChargeAttacks: "Sol's Weighty Charged Attacks"
+SettingIntegrateSolWeightyChargeAttacksDescription: "Detect Sol's Weighty Charged Attacks (SWCA) via its settings section (Settings_SolWeightyChargeAttacks). When present, heavy, committed melee stances (Mjölnir, Zweihänder, Axeman, Guisarmier, Soloist, Reforger) gain a passive bonus to their own weapon skill — their mastery of the charged, weighty strike. The ceiling is derived from SWCA's own 'buffBase' and 'maxCharge' settings and the equipped weapon's weight (heavier weapons give a weightier bonus, mirroring SWCA's release-buff formula), then scales with the stance's level. Read-only; SWCA is never written to, and the bonus is simply absent when SWCA is not installed."
+SettingIntegrateMoveLikeThis: Move Like This
+SettingIntegrateMoveLikeThisDescription: "Detect Move Like This via its settings section (Settings_MoveLikeThis). Move Like This gives each weapon type distinct chop/slash/thrust effects (Cleave, Critical, Stagger, Armor Pierce, Stomp, First Strike, Shield Break, Mobility/Blind). When present, each melee stance's signature directional move(s) are shown in its tooltip, and landing the two attacker-notified moves — a critical thrust or a mobility slash — grants the active stance a little extra XP (toggle each under Progression). Read-only: Stance never re-applies or alters Move Like This's effects; the skill-scaled ones already grow with the stance because the effectiveness and Sol mastery bonuses raise the weapon skill they key off."
+SettingIntegrateBardcraft: Bardcraft
+SettingIntegrateBardcraftDescription: "Detect Bardcraft via its Skill Framework skill ('bardcraft'). Enables the Muse stance: while you perform a song idly (a Practice performance), Muse becomes your active stance, and finishing the song grants a timed inspiration buff (a weapon-skill bonus) to the stance that song is associated with. Successful notes add buff time and drain 2 fatigue; fumbled notes subtract buff time and drain 4. Higher Muse levels let more of a song's loops feed the buff. Read-only with respect to Bardcraft — Stance only listens to its events."
 SettingIntegrateWeaponUpgrade: Weapon Upgrade
 SettingIntegrateWeaponUpgradeDescription: Detect the Armorer's Repair Hammer for Reforger stance detection and listen for upgrade-success messages to credit Reforger XP.
 SettingIntegrateArmorUpgrade: Armor Upgrade
@@ -258,6 +272,10 @@ SettingXpOnTrapHit: XP from Trap Catches
 SettingXpOnTrapHitDescription: Grant Thief XP whenever an enemy is caught by one of your armed traps (from the Traps mod). Worth 3 XP before the global multiplier, credited to the Thief stance no matter what you are wielding. Requires the Traps integration to be enabled.
 SettingXpOnOilBurn: XP from Oil Fires
 SettingXpOnOilBurnDescription: Grant Apothecary XP while an enemy stands in one of your burning oil pools (from the Oil Flask mod). A small amount is credited about once per second for as long as the enemy keeps burning, to the Apothecary stance no matter what you are wielding. Requires the Oil Flask integration to be enabled.
+SettingXpOnMltCritical: XP from Move Like This Criticals
+SettingXpOnMltCriticalDescription: Grant the active stance a little extra XP whenever you land a Move Like This critical thrust (Long Blade, Short Blade, or Hand-to-Hand). Credited to whichever stance is active, which is necessarily the matching weapon stance. Requires the Move Like This integration to be enabled.
+SettingXpOnMltMobility: XP from Move Like This Mobility Slashes
+SettingXpOnMltMobilityDescription: Grant the active stance a little extra XP whenever you land a Move Like This mobility slash (Short Blade or Hand-to-Hand, when that slash effect is selected in Move Like This). Requires the Move Like This integration to be enabled.
 
 SettingIntegrateCommercium: Commercium / Fair Trade
 SettingIntegrateCommerciumDescription: Detect the Commercium / Fair Trade mod via its player settings group. When present, the Commoner stance earns XP on each barter transaction via the mod's FairTrade_Transaction event (relayed to the player through Stance's global script).

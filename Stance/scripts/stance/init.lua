@@ -73,6 +73,34 @@ local function readSetting(groupSuffix, key, default)
     return val
 end
 
+-- Read a setting from ANOTHER mod's storage section by its full section name
+-- (e.g. 'Settings_SolTimedDirAttacks'). Used by integrations that size their
+-- bonus from a source mod's own configured values. The section may live in
+-- either the player or global storage section, so we probe both; everything is
+-- pcall-guarded and falls back to `default` so a missing/renamed section can
+-- never raise. Cached per section name like settingSection above.
+local foreignSettingsSections = {}
+local function readForeignSetting(sectionName, key, default)
+    if type(sectionName) ~= 'string' then return default end
+    local cached = foreignSettingsSections[sectionName]
+    if cached ~= nil then
+        local okGet, val = pcall(function() return cached:get(key) end)
+        if okGet and val ~= nil then return val end
+        return default
+    end
+    for _, accessor in ipairs({ storage.playerSection, storage.globalSection }) do
+        local okSec, section = pcall(accessor, sectionName)
+        if okSec and section then
+            local okGet, val = pcall(function() return section:get(key) end)
+            if okGet and val ~= nil then
+                foreignSettingsSections[sectionName] = section
+                return val
+            end
+        end
+    end
+    return default
+end
+
 -- Leveling model:
 --   * Each stance has its OWN xp + level, persisted in player storage.
 --     A stance only gains XP while it is the ACTIVE stance.
@@ -329,6 +357,10 @@ local INTEGRATION_SETTING_KEY = {
     armorupgrade   = 'integrateArmorUpgrade',
     grip           = 'integrateGRIP',
     blademeister   = 'integrateBlademeister',
+    soltimeddirattacks      = 'integrateSolTimedDirAttacks',
+    solweightychargeattacks = 'integrateSolWeightyChargeAttacks',
+    movelikethis            = 'integrateMoveLikeThis',
+    bardcraft               = 'integrateBardcraft',
     evasion        = 'integrateEvasion',
     thrownconcoctions   = 'integrateThrownConcoctions',
     veneficvials   = 'integrateVeneficVials',
@@ -530,12 +562,17 @@ local prefixes = require('scripts.stance.player.prefixes').new({
     getStanceConfig    = getStanceConfig,
     integrationEnabled = integrationEnabled,
     getActiveStance    = function() return activeStanceId end,
+    getStanceLevel     = function(id) return getStanceLevel(id) end,
 })
 local formatStanceName           = prefixes.formatStanceName
 local refreshImbuePrefix         = prefixes.refreshImbuePrefix
 local refreshFortified           = prefixes.refreshFortified
 local refreshSneaky              = prefixes.refreshSneaky
+local refreshSmoking             = prefixes.refreshSmoking
+local clearSmokingSpeedOffset    = prefixes.clearSmokingSpeedOffset
 local currentFortifiedBlockBonus = prefixes.currentFortifiedBlockBonus
+local currentSmokingWeaponBonus  = prefixes.currentSmokingWeaponBonus
+local isSmokingActive            = prefixes.isSmokingActive
 local getActivePrefixNotes       = prefixes.getActivePrefixNotes
 local getActivePrefixIcons       = prefixes.getActivePrefixIcons
 local isSneakyActive             = prefixes.isSneakyActive
@@ -560,6 +597,11 @@ local currentBrawlerGauntletSpeedMult   = prefixes.currentBrawlerGauntletSpeedMu
 -- forward-declared locals assigned further down. The DW detection section
 -- below still needs two helpers, re-bound here.
 local WTYPE = types.Weapon and types.Weapon.TYPE or {}  -- also used by resolveStanceSkill below
+-- Forward declaration: assigned after the Muse module is constructed below.
+-- Lets the resolver ask "is the player performing idly?" without a require cycle
+-- (the Muse module needs the resolver's resolveStanceSkill, so it is built later).
+local museIsPerforming
+
 local resolver = require('scripts.stance.player.resolver').new({
     self = self, types = types, core = core,
     config = config,
@@ -568,6 +610,7 @@ local resolver = require('scripts.stance.player.resolver').new({
     stanceEnabled      = function(id) return stanceEnabled(id) end,
     integrationEnabled = integrationEnabled,
     integrationPresent = function(id) return integrationPresent(id) end,
+    isPerformingMusically = function() return museIsPerforming and museIsPerforming() or false end,
     isDualWielding     = function(now) return isDualWielding(now) end,
     isFelthornInOffhand = function() return isFelthornInOffhand() end,
     getRightHandWeapon = getRightHandWeapon,
@@ -861,6 +904,7 @@ local STANCE_SETTING_KEY = {
     locksmith    = 'enableLocksmith',
     brawler      = 'enableBrawler',
     commoner     = 'enableCommoner',
+    muse         = 'enableMuse',
     apothecary   = 'enableApothecary',
     forager      = 'enableForager',
 }
@@ -965,6 +1009,64 @@ local felthornVoice = require('scripts.stance.player.felthorn_voice').new({
     readSetting = readSetting,
 })
 
+-- ─── Sol combat-mod integrations (STDA / SWCA) (module) ──────────────────
+-- Per-stance "timed directional attack" and "weighty charged attack" mastery
+-- bonuses. Applied through the same delta-accounted native skill-modifier path
+-- the effectiveness / Fortified / Smoking bonuses use, ceilinged from the Sol
+-- mods' OWN live settings and scaled by stance level. Constructed here (after
+-- resolveStanceSkill / getRightHandWeapon / safeWeaponRecord / integrationPresent
+-- are all defined) so the module can read the active stance's target skill and
+-- the equipped weapon. The delta trackers are transient and are zeroed via
+-- clearSolBonuses() from onLoad, exactly like clearEvasionBonus.
+local solAttacks = require('scripts.stance.player.sol_attacks').new({
+    self = self, types = types,
+    config = config,
+    readSetting        = readSetting,
+    readForeignSetting = readForeignSetting,
+    getStanceLevel     = function(id) return getStanceLevel(id) end,
+    getActiveStance    = function() return activeStanceId end,
+    integrationPresent = function(id) return integrationPresent(id) end,
+    resolveStanceSkill = resolveStanceSkill,
+    getRightHandWeapon = getRightHandWeapon,
+    safeWeaponRecord   = safeWeaponRecord,
+})
+local refreshSolBonuses          = solAttacks.refreshSolBonuses
+local clearSolBonuses            = solAttacks.clearSolBonuses
+local getStanceTimedBonus        = solAttacks.getStanceTimedBonus
+local getStanceWeightyBonus      = solAttacks.getStanceWeightyBonus
+local getStanceTimedSignature    = solAttacks.getStanceTimedSignature
+local getStanceWeightySignature  = solAttacks.getStanceWeightySignature
+
+-- ─── Muse stance / Bardcraft integration (module) ────────────────────────
+-- The Muse stance + its inspiration-buff economy. Constructed here (after
+-- resolveStanceSkill / grantStanceXp / the level getters / integrationPresent
+-- are all defined) so it can read the buffed stance's target skill and credit
+-- Muse XP. museIsPerforming (declared above, used by the resolver) is assigned
+-- from the module so the resolver can route to Muse while performing idly.
+local muse = require('scripts.stance.player.muse').new({
+    self = self, types = types, core = core,
+    config = config,
+    ui = ui,
+    storage = storage,
+    readSetting        = readSetting,
+    debugLog           = debugLog,
+    integrationPresent = function(id) return integrationPresent(id) end,
+    integrationEnabled = integrationEnabled,
+    stanceEnabled      = function(id) return stanceEnabled(id) end,
+    grantStanceXp      = grantStanceXp,
+    getStanceLevel     = function(id) return getStanceLevel(id) end,
+    resolveStanceSkill = resolveStanceSkill,
+    getActiveStance    = function() return activeStanceId end,
+})
+museIsPerforming = muse.isPerformingMusically
+local onConductorEvent      = muse.onConductorEvent
+local onBardNote            = muse.onNote
+local updateMuse            = muse.update
+local clearMuseSkillBonuses = muse.clearMuseSkillBonuses
+local getMuseBuffInfo            = muse.getBuffInfo
+local getMuseSongTitlesForStance = muse.getSongTitlesForStance
+local getMusePerformanceStatus   = muse.getPerformanceStatus
+
 -- ─── Skill Framework registration ─────────────────────────────────────────
 
 local skillFramework = require('scripts.stance.player.skill_framework').new({
@@ -981,8 +1083,16 @@ local skillFramework = require('scripts.stance.player.skill_framework').new({
     getStanceXp             = getStanceXp,
     effectivenessSkillBonus = effectivenessSkillBonus,
     getStanceEvasionBonus   = getStanceEvasionBonus,
+    getStanceTimedBonus       = getStanceTimedBonus,
+    getStanceWeightyBonus     = getStanceWeightyBonus,
+    getStanceTimedSignature   = getStanceTimedSignature,
+    getStanceWeightySignature = getStanceWeightySignature,
+    getMuseBuffInfo              = getMuseBuffInfo,
+    getMuseSongTitlesForStance   = getMuseSongTitlesForStance,
+    getMusePerformanceStatus     = getMusePerformanceStatus,
     currentFortifiedBlockBonus = currentFortifiedBlockBonus,
     currentBrawlerGauntletHhBonus = currentBrawlerGauntletHhBonus,
+    currentSmokingWeaponBonus  = currentSmokingWeaponBonus,
     getActivePrefixNotes    = getActivePrefixNotes,
     -- Subtype-aware perk ladder accessor (Forager shows gardening vs harvesting
     -- perks by the tool in hand); every other stance returns its single ladder.
@@ -1363,6 +1473,9 @@ local onCommerciumTransaction   = integrationsXp.onCommerciumTransaction
 local onTranscribeSuccess       = integrationsXp.onTranscribeSuccess
 local onDialogueStarted         = integrationsXp.onDialogueStarted
 local onGskKnockdown            = integrationsXp.onGskKnockdown
+local onForagerGardeningProgress = integrationsXp.onForagerGardeningProgress
+local onMltCriticalStrike       = integrationsXp.onMltCriticalStrike
+local onMltMobilityStrike       = integrationsXp.onMltMobilityStrike
 
 -- Debounce for the Commoner talking-XP source. Owned here because its only
 -- writer is the combined UiModeChanged wrapper below.
@@ -1546,6 +1659,11 @@ local function onUpdate(dt)
     -- refresh below doesn't matter — only that it runs before the render.
     refreshSneaky()
 
+    -- Refresh the Smoking state (Hackle-Lo pipe held or buff lingering). Runs
+    -- on the same tick so the "Smoking" prefix and its +10 weapon-skill bonus
+    -- are always in sync with the tooltip and HUD render that follow.
+    refreshSmoking()
+
     -- Refresh SneakIsGoodNow attentiveness bonus (detection difficulty
     -- multiplier) while the player is sneaking. Runs on the same tick as
     -- refreshSneaky for coherence.
@@ -1561,6 +1679,17 @@ local function onUpdate(dt)
     -- delta-accounting pattern as Evasion! so the two contributions stack
     -- cleanly without interfering with each other.
     refreshEvasionBonus()
+
+    -- Apply the per-stance Sol combat-mod bonuses (timed directional / weighty
+    -- charged attack mastery). Same delta-accounted native-modifier pattern;
+    -- no-op unless the relevant Sol mod is present and the active stance has an
+    -- affinity. Runs after refreshEffectivenessModifiers so it composes with the
+    -- effectiveness bonus on the same weapon skill.
+    refreshSolBonuses()
+
+    -- Muse inspiration buffs: count down active buffs, apply/peel the per-skill
+    -- modifiers, and persist remaining time. No-op unless a buff is live.
+    updateMuse(dt)
 
     -- Felthorn's ambient voice (no-op unless Blademeister is active).
     felthornVoice.update(activeStanceId, now)
@@ -1658,6 +1787,18 @@ local function onLoad(data)
     -- tracker so the first refreshEvasionBonus re-applies from zero rather
     -- than believing the old bonus is still in place.
     clearEvasionBonus()
+    -- Same reasoning for the Sol combat-mod bonuses: the engine zeroes the
+    -- skill modifiers our bonus rides on, so reset our trackers or the first
+    -- refreshSolBonuses would over-apply against a stale baseline.
+    clearSolBonuses()
+    -- Muse inspiration buffs ride skill modifiers too; zero our transient
+    -- trackers so the first updateMuse re-applies from a clean baseline (the
+    -- persisted buff remaining-times are reloaded from the Muse storage section).
+    clearMuseSkillBonuses()
+    -- Same reasoning for the Hackle-Lo smoke Speed-drain offset: the engine
+    -- zeroes the attribute modifiers our offset rides on, so reset our tracker
+    -- or the first refreshSmoking would over-apply against a stale baseline.
+    clearSmokingSpeedOffset()
     dualWieldingActive = false
     dualWieldingWeaponRecord = nil
     dualWieldingAsOf = -math.huge
@@ -1876,11 +2017,27 @@ return {
         Stance_CommerciumTransaction = onCommerciumTransaction,
         -- Transcribe spell-transcription, relayed from global.lua.
         Stance_TranscribeSuccess     = onTranscribeSuccess,
+        -- Gardening and Farming progress (plant +0.1 / harvest +0.2 of the mod's
+        -- tribGardner global), relayed as a delta from global.lua → Forager XP.
+        Stance_GardeningProgress     = onForagerGardeningProgress,
         EquipSecondWeapon           = onDualWieldingEquip,
         EquipSecondWeaponKey        = onDualWieldingEquipKey,
         RemoveSecondWeapon          = onDualWieldingRemove,
         RemoveSecondWeaponUI        = onDualWieldingRemove,
         GKD_DoKnockdown             = onGskKnockdown,
+        -- Move Like This signature-move XP: both events are sent by MLT to the
+        -- attacker, so they land here only when the player lands the move. Each
+        -- credits the active (matching weapon) stance. Read-only; MLT's own
+        -- handlers for these events still run independently.
+        MLT_DirAttack_criticalHit   = onMltCriticalStrike,
+        MLT_mobilityBuff            = onMltMobilityStrike,
+        -- Bardcraft / Muse: the conductor sends BO_ConductorEvent to the
+        -- performer (the player) for PerformStart / NewBar / PerformStop, which
+        -- drives the Muse stance + buff timer. Per-note success/fail arrives as
+        -- Stance_BardNote, relayed from global.lua (BC_PerformerNoteHandled is a
+        -- global event; global.lua filters it to player notes and forwards it).
+        BO_ConductorEvent           = onConductorEvent,
+        Stance_BardNote             = onBardNote,
         -- WeaponUpgrade and ArmorUpgrade both dispatch ShowMessage to the
         -- player. We listen and inspect the body to credit Reforger XP.
         ShowMessage                 = onUpgradeShowMessage,

@@ -43,6 +43,7 @@ function M.new(ctx)
     local stanceEnabled      = ctx.stanceEnabled
     local integrationEnabled = ctx.integrationEnabled
     local integrationPresent = ctx.integrationPresent
+    local isPerformingMusically = ctx.isPerformingMusically or function() return false end
     local isDualWielding     = ctx.isDualWielding
     local isFelthornInOffhand = ctx.isFelthornInOffhand
     local getRightHandWeapon = ctx.getRightHandWeapon
@@ -861,6 +862,17 @@ function M.new(ctx)
         local function pick(id, reason)
             if not stanceEnabled(id) then return nil end
             return { id = id, reason = reason }
+        end
+
+        -- 0) Muse: active ONLY while performing a song idly (a Bardcraft
+        --    Practice performance). This sits above every weapon/spell/commoner
+        --    branch because while performing the player's weapons are sheathed
+        --    (which would otherwise resolve to Commoner). The Muse module gates
+        --    isPerformingMusically on the integration being present, Muse being
+        --    enabled, and the mod master switch, so this is inert otherwise.
+        if isPerformingMusically() then
+            local r = pick('muse', 'performing idly')
+            if r then return r end
         end
 
         -- 1) Locksmith: a lockpick OR a probe is READIED in the right hand.

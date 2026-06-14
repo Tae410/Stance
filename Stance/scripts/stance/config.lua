@@ -65,7 +65,7 @@ local config = {
 
     -- ─── Leveling ─────────────────────────────────────────────────────────
     -- Per-stance progression with a shared core skill:
-    --   * Each stance has its OWN xp bank and level (5 → 100), persisted in
+    --   * Each stance has its OWN xp bank and level (5 - 100), persisted in
     --     player storage. Only the ACTIVE stance gains xp; switching stances
     --     banks the current one untouched.
     --   * The core "Stance" skill (owned by Skill Framework) gains HALF of
@@ -88,9 +88,9 @@ local config = {
         -- Framework's registerDynamicModifier on the skill tied to each stance's
         -- weapon type or modded integration. The bonus ramps linearly from
         -- effectivenessMinBonus at startLevel to effectivenessMaxBonus at maxLevel.
-        --   Soloist lv 5  → +2 Long Blade
-        --   Soloist lv 52 → +11 Long Blade   (approx midpoint)
-        --   Soloist lv 100 → +20 Long Blade
+        --   Soloist lv 5  - +2 Long Blade
+        --   Soloist lv 52 - +11 Long Blade   (approx midpoint)
+        --   Soloist lv 100 - +20 Long Blade
         effectivenessMinBonus = 2,  -- additive skill pts at startLevel
         effectivenessMaxBonus = 20, -- additive skill pts at maxLevel
     },
@@ -102,7 +102,7 @@ local config = {
     -- Block skill bonus while so equipped. The bonus SCALES with the player's
     -- own Block skill (base), using the same effectivenessMinBonus →
     -- effectivenessMaxBonus ramp (above) the weapon-skill effectiveness
-    -- bonuses use, across the same startLevel → maxLevel range — so the two
+    -- bonuses use, across the same startLevel - maxLevel range — so the two
     -- knobs in the leveling block tune both systems in unison. There is no
     -- separate flat value to configure.
 
@@ -115,9 +115,9 @@ local config = {
     -- are classified here; the heavier of the two equipped pieces sets the
     -- tier. The weight class is computed EXACTLY as the engine does it (see
     -- player/prefixes.lua classifyHandArmor, mirroring mwclass/armor.cpp
-    -- getEquipmentSkill): weight ≤ floor(iGauntletWeight) × fLightMaxMod → Light,
-    -- ≤ × fMedMaxMod → Medium, else Heavy. "Unarmored" means no hand armor at
-    -- all (bare fists) → the 'none' tier: no bonus, no penalty.
+    -- getEquipmentSkill): weight ≤ floor(iGauntletWeight) × fLightMaxMod - Light,
+    -- ≤ × fMedMaxMod - Medium, else Heavy. "Unarmored" means no hand armor at
+    -- all (bare fists) - the 'none' tier: no bonus, no penalty.
     --
     --   hhBonus     — additive Hand-to-Hand skill points. Stacks ON TOP of the
     --                 Brawler effectiveness bonus through the same delta-
@@ -128,9 +128,9 @@ local config = {
     -- The values below are the design defaults; tune freely. Light/Medium/Heavy
     -- map 1:1 to the three vanilla armor weight classes.
     brawlerGauntlet = {
-        light  = { hhBonus = 1.5, speedDebuff = 0.15 },
-        medium = { hhBonus = 2.5, speedDebuff = 0.25 },
-        heavy  = { hhBonus = 3.5, speedDebuff = 0.35 },
+        light  = { hhBonus = 2.5, speedDebuff = 0.25 },
+        medium = { hhBonus = 5.0, speedDebuff = 0.50 },
+        heavy  = { hhBonus = 7.5, speedDebuff = 0.75 },
         -- Defensive floor on the resulting speed multiplier so a re-tune (or a
         -- mod-raised debuff) can never freeze unarmed attacks at 0× speed.
         minSpeedMult = 0.10,
@@ -196,9 +196,30 @@ local config = {
         -- throw is just an ordinary engine hit) while Apothecary is the active
         -- stance. Worth more than a plain melee hit because every throw expends
         -- a concoction, so they are thrown far less often than a reusable weapon
-        -- is swung. The unified hit path (victim.lua → Stance_PlayerDealtHit)
+        -- is swung. The unified hit path (victim.lua - Stance_PlayerDealtHit)
         -- credits this in place of combatHit when Apothecary is active.
         concoctionThrowHit    = 2.50,  -- a concoction that finds its mark
+
+        -- Move Like This: granted when the player LANDS one of MLT's signature
+        -- directional moves that notifies the attacker. MLT fires
+        -- 'MLT_DirAttack_criticalHit' on a critical thrust (Long Blade 1H/2H,
+        -- Short Blade, Hand-to-Hand) and 'MLT_mobilityBuff' on a mobility slash
+        -- (Short Blade / Hand-to-Hand, when that slash effect is selected). Each
+        -- credits the ACTIVE stance — which is necessarily the matching weapon
+        -- stance — so landing your stance's signature MLT move trains it a touch
+        -- faster, on top of the ordinary hit XP. Mirrors the N'Garde parry XP
+        -- source. The other MLT effects (cleave, stagger, armor pierce, stomp,
+        -- first strike, shield break, blind) do not notify the attacker, so they
+        -- have no dedicated XP source; they still scale with the active stance's
+        -- weapon skill, which the effectiveness/Sol mastery bonuses raise.
+        mltCriticalStrike     = 1.50,  -- a critical thrust found the gap
+        mltMobilityStrike     = 0.75,  -- a flowing slash opened the footwork
+
+        -- Muse: granted for performing an idle (Practice) song to completion,
+        -- and again whenever a finished song successfully administers an
+        -- inspiration buff to its associated stance. See player/muse.lua.
+        museSongComplete      = 3.00,  -- a song carried through to its end
+        museBuffAdminister    = 2.00,  -- inspiration successfully bestowed
 
         -- Thief: granted when an enemy is caught by a deployed Trap (the Traps
         -- mod's armed trap, which deals a massive one-shot hit). Credited to the
@@ -235,6 +256,19 @@ local config = {
         -- Arcanist & Thaumaturge: granted when the Transcribe mod confirms a
         -- successful spell transcription while either stance is active.
         transcribeSuccess     = 3.00,  -- copying an enchantment into a spell
+        -- Forager: granted from the Gardening and Farming mod's own progress.
+        -- That mod tracks a single MWScript global (`tribGardner`) that it
+        -- raises by +0.1 every time you PLANT a seed (drop it) and by +0.2 every
+        -- time you HARVEST a grown plant with the Harvest Hoe or a Scythe. The
+        -- global script watches that value and forwards each increase here as a
+        -- delta; we credit Forager `delta * gardeningProgressScale` XP. At the
+        -- default scale of 15, a planting (+0.1) is worth 1.5 XP and a harvest
+        -- (+0.2) is worth 3.0 XP — so harvesting yields twice the XP of planting,
+        -- exactly the 1:2 weighting the source mod uses, and a harvest matches a
+        -- mined ore / landed fish (3.0). Credited to Forager directly, whatever
+        -- you happen to be wielding (you can plant a seed bare-handed), mirroring
+        -- the way the source mod levels its Gardening skill on both actions.
+        gardeningProgressScale = 15.00,
     },
 
     -- ─── Stance definitions ───────────────────────────────────────────────
@@ -859,6 +893,22 @@ local config = {
                 },
             },
         },
+        {
+            id = 'muse',
+            displayName = 'Muse',
+            icon = 'icons/Stance/Muse.dds',
+            attribute = 'personality',
+            description = 'Not a fighting form at all, but the open, listening posture of the performer mid-song. The Muse stance takes hold only while you play idly for yourself; carry a tune to its end and its inspiration settles on whatever discipline the song speaks to. Personality is its virtue — the bard\'s gift for moving others, and oneself.',
+            integrations = { 'bardcraft' },
+            category = 'support',
+            -- No effectiveness target (Muse buffs OTHER stances, not a weapon
+            -- skill of its own) and no evasion bonus; it is a non-combat stance.
+            evasionBonus = 0,
+            -- Per the design, Muse has NO perks. Its only level reward is the
+            -- loop allowance (config.muse.loopMilestoneInterval): +1 loopable
+            -- buff per milestone, handled in player/muse.lua.
+            perks = {},
+        },
     },
 
     -- ─── Integration / external mod detection ─────────────────────────────
@@ -974,7 +1024,7 @@ local config = {
             -- branch so concoctions route to Apothecary rather than Twirler).
             -- A landed concoction is an ordinary engine hit, so XP and the
             -- on-hit perk effects flow through the same victim-side combat
-            -- bridge (victim.lua → Stance_PlayerDealtHit) every other weapon
+            -- bridge (victim.lua - Stance_PlayerDealtHit) every other weapon
             -- stance uses; no dedicated patch or event is required.
             weaponRecordId = 'concoction_base',
         },
@@ -1112,6 +1162,209 @@ local config = {
             -- consulting types.Weapon.records for at least one record
             -- whose id starts with `sd_`. See init.lua's detectIntegration.
             recordIdPrefix = 'sd_',
+        },
+        soltimeddirattacks = {
+            label = "Sol's Timed Directional Attacks",
+            -- STDA (by Solthas) is a pure-Lua PLAYER-scope mod that fires no
+            -- public event — it runs entirely off per-frame input polling and
+            -- applies its own transient stat modifiers. Its canonical presence
+            -- signal is its permanent player settings section
+            -- 'Settings_SolTimedDirAttacks', which is written when the mod
+            -- registers its settings group. Stance! READS that section's
+            -- 'buffBase' value to size the per-stance "timed directional attack"
+            -- mastery bonus (see player/sol_attacks.lua + config.solAffinity);
+            -- it never writes to STDA's data and does not require it to be
+            -- present (the bonus is simply absent when STDA is not installed).
+            settingsGroup = 'Settings_SolTimedDirAttacks',
+        },
+        solweightychargeattacks = {
+            label = "Sol's Weighty Charged Attacks",
+            -- SWCA (by Solthas), like STDA, is a pure-Lua PLAYER-scope mod with
+            -- no public event — it polls input per frame and applies its own
+            -- transient modifiers. Presence is detected via its permanent player
+            -- settings section 'Settings_SolWeightyChargeAttacks'. Stance! READS
+            -- that section's 'buffBase' and 'maxCharge' values to size the
+            -- per-stance "weighty charged attack" mastery bonus, which also
+            -- scales with the equipped weapon's weight via SWCA's own
+            -- release-buff formula (see player/sol_attacks.lua). Read-only; not
+            -- required; never written to.
+            settingsGroup = 'Settings_SolWeightyChargeAttacks',
+        },
+        movelikethis = {
+            label = 'Move Like This',
+            -- Move Like This (by GlDanik) adds vanilla-inspired per-weapon-type
+            -- directional-attack mechanics (Cleave, Critical, Stagger, Armor
+            -- Pierce, Stomp, First Strike, Shield Break, Mobility/Blind) keyed to
+            -- the equipped weapon type and the chop/slash/thrust direction. It
+            -- registers its settings group from a GLOBAL script, so presence is
+            -- detected via the 'Settings_MoveLikeThis' section (detectIntegration
+            -- probes both player and global storage). Stance! integrates two
+            -- ways, both read-only and non-invasive:
+            --   1) XP: it listens for the two attacker-notified MLT events
+            --      ('MLT_DirAttack_criticalHit', 'MLT_mobilityBuff') and credits
+            --      the active stance when the player lands that signature move.
+            --   2) Tooltip: each melee stance's signature MLT directional
+            --      move(s) are surfaced in the stance tooltip (see
+            --      config.mltSignature), and noted to grow with the stance's
+            --      weapon-skill mastery (MLT's crit/stagger/mobility/blind/cleave
+            --      math all scale with the attacker's weapon skill, which the
+            --      effectiveness + Sol mastery bonuses raise). Stance never
+            --      re-applies or modifies MLT's effects.
+            settingsGroup = 'Settings_MoveLikeThis',
+        },
+        bardcraft = {
+            label = 'Bardcraft',
+            -- Bardcraft registers a Skill Framework skill, 'bardcraft', so its
+            -- presence is detected the clean way — via getSkillRecord (see
+            -- detectIntegration's skillId branch). Powers the Muse stance: idle
+            -- (Practice) performances activate Muse, and finishing a song grants
+            -- a timed inspiration buff to the stance the song is associated with.
+            -- Read-only with respect to Bardcraft (we only listen to its events).
+            skillId = 'bardcraft',
+        },
+    },
+
+    -- ─── Sol combat-mod integration tuning ────────────────────────────────
+    -- Cap on the weapon weight used when sizing the Weighty Charged Attacks
+    -- (SWCA) mastery bonus, so an absurdly heavy modded weapon can't drive a
+    -- runaway bonus. Mirrors the spirit of SWCA's own weight scaling while
+    -- keeping the integration bounded. (A 30-weight weapon already yields a
+    -- (1 + sqrt(30)) ≈ 6.5× factor.)
+    solWeapWeightCap = 30,
+
+    -- Per-stance affinities for the two Sol combat mods. A stance listed here
+    -- earns a passive bonus to its OWN weapon skill — scaled by the stance's
+    -- level (0 at startLevel - full ceiling at maxLevel) and ceilinged from the
+    -- relevant Sol mod's OWN live settings — while that Sol mod is present and
+    -- the stance is active. See player/sol_attacks.lua for the full mechanic.
+    --
+    -- The split is curated for immersion:
+    --   • TIMED   (STDA) — nimble, tempo-driven, finesse stances whose
+    --     fighting style lives on well-timed directional attacks. `dir` names
+    --     the signature directional attack (Chop / Slash / Thrust), shown in
+    --     the tooltip; `weight` scales the ceiling relative to STDA.buffBase.
+    --   • WEIGHTY (SWCA) — heavy, committed, power stances whose signature is
+    --     the charged, weighty strike. `sig` names the signature blow, shown in
+    --     the tooltip; `weight` scales the ceiling relative to SWCA's
+    --     weight/charge-derived release buff.
+    -- A weapon that can be played either way (greatswords, axes, spears,
+    -- one-handed long blades) appears under BOTH, weighted toward its dominant
+    -- character. Tool / activity / caster stances (Pitmen, Angler, Arcanist, …)
+    -- have no affinity — they don't make timed or weighty melee strikes.
+    --
+    -- Only stances whose target skill resolves to a VANILLA weapon skill are
+    -- listed (the bonus is delivered through the native skill `.modifier` path);
+    -- modded-skill stances are intentionally omitted.
+    solAffinity = {
+        -- Finesse / tempo (TIMED-leaning)
+        thief        = { timed = { dir = 'Slash',  weight = 1.0 } },                                 -- short blades live on tempo and the drawing cut
+        soloist      = { timed = { dir = 'Slash',  weight = 1.0 }, weighty = { sig = 'Power Thrust', weight = 0.6 } }, -- the duelist's measured cut, with the occasional committed lunge
+        dualist      = { timed = { dir = 'Slash',  weight = 1.0 } },                                 -- a cadence of crossing cuts from both hands
+        guisarmier   = { timed = { dir = 'Thrust', weight = 1.0 }, weighty = { sig = 'Set Spear',   weight = 0.7 } }, -- the spear's reach-lunge; a braced couch when committed
+        blademeister = { timed = { dir = 'Slash',  weight = 0.9 } },                                 -- Felthorn flows with its wielder's rhythm
+        -- Power / weight (WEIGHTY-leaning)
+        mjolnir      = { weighty = { sig = 'Smite',  weight = 1.0 }, timed = { dir = 'Chop', weight = 0.6 } }, -- the hammer IS the weighty charged blow
+        zweihander   = { weighty = { sig = 'Cleave', weight = 1.0 }, timed = { dir = 'Chop', weight = 0.6 } }, -- the greatsword's defining wind-up arc
+        axeman       = { weighty = { sig = 'Cleave', weight = 0.9 }, timed = { dir = 'Chop', weight = 0.8 } }, -- the overhand cleave, timed or charged
+        reforger     = { weighty = { sig = 'Forge Blow', weight = 0.8 } },                           -- the smith's full-shoulder hammer swing
+        -- Unarmed (TIMED only — fists chain on rhythm, not weight)
+        brawler      = { timed = { dir = 'Chop', weight = 0.8 } },
+    },
+
+    -- ─── Move Like This — per-stance signature directional moves ──────────
+    -- Move Like This gives each weapon type distinct chop/slash/thrust effects.
+    -- This table names, per melee stance, the signature move(s) that mod grants
+    -- the stance's weapon — surfaced in the stance tooltip when Move Like This
+    -- is present, so the player can read what makes the stance distinct in
+    -- combat. Purely descriptive: Stance does not re-apply or alter MLT's
+    -- effects (it only credits XP on the two MLT events that notify the
+    -- attacker — see config.xp.mltCriticalStrike / mltMobilityStrike). MLT's
+    -- crit / stagger / mobility / blind / cleave math all scale with the
+    -- attacker's weapon skill, so the active stance's effectiveness + Sol
+    -- mastery bonuses (which raise that weapon skill) already sharpen these
+    -- moves as the stance levels — hence the `scales` note shown in the tooltip.
+    --
+    -- Only stances tied to a FIXED melee weapon type are listed. Dualist and
+    -- Blademeister wield a varying 1H/typed weapon, so their MLT effects follow
+    -- whatever form is in hand (noted generically). Ranged/thrown/tool/caster
+    -- stances get no MLT directional effects and are omitted.
+    --   `moves`  — short label of the signature directional effect(s)
+    --   `xp`     — true if the stance can earn the MLT signature-move XP source
+    --              (i.e. its weapon can trigger a critical thrust or mobility slash)
+    mltSignature = {
+        soloist      = { moves = 'Thrust - Critical / Slash - Cleave',                 xp = true },
+        zweihander   = { moves = 'Thrust - Critical / Slash - Cleave',                 xp = true },
+        thief        = { moves = 'Thrust - Critical / Slash - Mobility / Blind / Cleave', xp = true },
+        brawler      = { moves = 'Thrust - Critical / Slash - Mobility / Blind / Chop - Stomp', xp = true },
+        mjolnir      = { moves = 'Thrust - Stagger / Slash - Armor Pierce / Cleave',    xp = false },
+        axeman       = { moves = 'Chop - Shield Break / Slash - Cleave',                xp = false },
+        guisarmier   = { moves = 'Thrust - First Strike / Slash - Cleave',              xp = false },
+        thaumaturge  = { moves = 'Chop - Stomp / Slash - Cleave / Thrust - Stagger / Fatigue damage', xp = false },
+        dualist      = { moves = 'Varies with your primary weapon',                     xp = true },
+        blademeister = { moves = 'Varies with Felthorn\'s current form',                xp = true },
+    },
+
+    -- ─── Muse stance / Bardcraft tuning ───────────────────────────────────
+    -- The Muse stance is active only while performing a song IDLY (a Bardcraft
+    -- Practice performance). Finishing a song grants a timed "inspiration" buff
+    -- (an additive weapon-skill bonus) to the stance the song is associated
+    -- with. See player/muse.lua for the full mechanic.
+    muse = {
+        -- Bardcraft PerformanceType values that count as "idle" play and
+        -- activate Muse. Practice (3) = playing for yourself, no venue/crowd.
+        -- (Perform=0, Tavern=1, Street=2, Practice=3, Ambient=4, NPCTeaching=5.)
+        idlePerfTypes = { [3] = true },
+
+        -- Buff-timer economy: each successful note adds time, each fumbled note
+        -- subtracts it; the total (clamped >= 0) becomes the buff duration.
+        successSeconds = 1.5,   -- buff seconds gained per successful note
+        failSeconds    = 1.0,   -- buff seconds lost per fumbled note
+        -- Fatigue drained per note played (success vs fumble).
+        successFatigue = 2,
+        failFatigue    = 4,
+
+        -- Loop allowance: how many loops of a song contribute to the buff timer.
+        -- Grows +1 per Muse milestone (every loopMilestoneInterval levels).
+        baseLoops             = 1,
+        loopMilestoneInterval = 25,   -- +1 loopable buff at Muse lvl 25/50/75/100
+        maxLoops              = 5,
+
+        -- Inspiration buff magnitude (skill points), scaled by Muse level.
+        buffMagnitudeBase     = 5,
+        buffMagnitudePerLevel = 0.10,  -- +0.1/level -> +10 at level 100
+        buffMagnitudeMax      = 20,
+
+        -- A song must be at least this complete (0..1) to grant the Muse
+        -- "song completed" XP.
+        minCompletionForXp = 0.5,
+
+        -- Stances a song can be associated with (the combat/weapon stances whose
+        -- inspiration is a weapon-skill bonus). Non-combat / tool / caster
+        -- stances and Muse itself are intentionally excluded. A song with no
+        -- override hashes deterministically onto this list, so every song maps
+        -- to exactly one stance, always the same one.
+        buffableStances = {
+            'soloist', 'zweihander', 'thief', 'dualist', 'guisarmier',
+            'axeman', 'mjolnir', 'brawler', 'huntsman', 'twirler',
+            'blademeister', 'thaumaturge',
+        },
+
+        -- Curated song -> stance overrides, matched first by exact song id, then
+        -- by a lowercased substring of the song title (so thematic songs buff a
+        -- coherent stance).
+        songOverrides = {
+            ['war']    = 'zweihander',
+            ['battle'] = 'zweihander',
+            ['hunt']   = 'huntsman',
+            ['hawk']   = 'huntsman',
+            ['drink']  = 'brawler',
+            ['tavern'] = 'brawler',
+            ['thief']  = 'thief',
+            ['shadow'] = 'thief',
+            ['blade']  = 'soloist',
+            ['duel']   = 'soloist',
+            ['storm']  = 'thaumaturge',
+            ['arcane'] = 'thaumaturge',
         },
     },
 

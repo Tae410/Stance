@@ -332,6 +332,60 @@ function M.new(ctx)
         end
     end
 
+    -- Forager: gardening/farming progress relayed from the global script
+    -- (scripts/stance/global.lua), which watches the Gardening and Farming mod's
+    -- own `tribGardner` MWScript global and forwards each increase as a delta.
+    -- The global rises +0.1 per seed PLANTED and +0.2 per plant HARVESTED, so the
+    -- delta already weights harvesting at twice planting; we simply scale it into
+    -- Forager XP. Credited DIRECTLY to Forager (grantStanceXpDirect) regardless of
+    -- the active stance — planting is done by dropping a seed, which you can do
+    -- bare-handed, exactly as the source mod levels Gardening on both actions. A
+    -- dedicated toggle (enableForagerGardeningXp) lets the player turn just this
+    -- progress source off without disabling the Forager stance itself.
+    local function onForagerGardeningProgress(payload)
+        if not readSetting('', 'enabled', true) then return end
+        if not stanceEnabled('forager') then return end
+        if not readSetting('Stances', 'enableForagerGardeningXp', true) then return end
+        if type(payload) ~= 'table' then return end
+        local delta = tonumber(payload.delta) or 0
+        if delta <= 0 then return end
+        local scale = config.xp.gardeningProgressScale or 15.0
+        grantStanceXpDirect(delta * scale, 'gardening', 'forager')
+        debugLog('Forager credited for gardening progress (delta ' .. tostring(delta) .. ').',
+            'debugPerkMessages')
+    end
+
+    -- ─── Move Like This integration ───────────────────────────────────────
+    -- Move Like This sends two events to the ATTACKER (so these land on the
+    -- player's scripts only when the PLAYER is the attacker):
+    --   * MLT_DirAttack_criticalHit — a critical thrust landed (Long Blade 1H/2H,
+    --     Short Blade, Hand-to-Hand). Carries no reliable payload.
+    --   * MLT_mobilityBuff { skillLevel } — a mobility slash landed (Short Blade
+    --     or Hand-to-Hand, when that slash effect is selected in MLT).
+    -- Each credits the ACTIVE stance — which is necessarily the matching weapon
+    -- stance, since only that weapon type fires the event — so landing your
+    -- stance's signature MLT move trains it a touch faster. Read-only: we never
+    -- touch MLT's own logic. Mirrors onNGardeParrySuccess.
+    local function onMltCriticalStrike(_payload)
+        if not readSetting('', 'enabled', true) then return end
+        if not readSetting('Progression', 'xpOnMltCritical', true) then return end
+        if not integrationEnabled('movelikethis') then return end
+        local active = getActiveStance()
+        if not active then return end
+        grantStanceXp(config.xp.mltCriticalStrike or 1.5, 'mltcritical', active)
+        debugLog(active .. ' credited for a Move Like This critical strike.', 'debugPerkMessages')
+    end
+
+    local function onMltMobilityStrike(_payload)
+        if not readSetting('', 'enabled', true) then return end
+        if not readSetting('Progression', 'xpOnMltMobility', true) then return end
+        if not integrationEnabled('movelikethis') then return end
+        local active = getActiveStance()
+        if not active then return end
+        grantStanceXp(config.xp.mltMobilityStrike or 0.75, 'mltmobility', active)
+        debugLog(active .. ' credited for a Move Like This mobility slash.', 'debugPerkMessages')
+    end
+
     return {
         onNGardeParrySuccess = onNGardeParrySuccess,
         onSimplyMiningOreSuccess = onSimplyMiningOreSuccess,
@@ -345,6 +399,9 @@ function M.new(ctx)
         onTranscribeSuccess = onTranscribeSuccess,
         onDialogueStarted = onDialogueStarted,
         onGskKnockdown = onGskKnockdown,
+        onForagerGardeningProgress = onForagerGardeningProgress,
+        onMltCriticalStrike = onMltCriticalStrike,
+        onMltMobilityStrike = onMltMobilityStrike,
     }
 end
 

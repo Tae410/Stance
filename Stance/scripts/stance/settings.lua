@@ -62,6 +62,8 @@ I.Settings.registerGroup {
           name = 'SettingEnableAttributeSwap',     description = 'SettingEnableAttributeSwapDescription',     default = true },
         { key = 'announceStanceChange',    renderer = 'checkbox',
           name = 'SettingAnnounceStanceChange',    description = 'SettingAnnounceStanceChangeDescription',    default = true },
+        { key = 'announceMuseSummary',     renderer = 'checkbox',
+          name = 'SettingAnnounceMuseSummary',     description = 'SettingAnnounceMuseSummaryDescription',     default = true },
     },
 }
 
@@ -79,6 +81,7 @@ I.Settings.registerGroup {
     settings = {
         { key = 'enableLocksmith',   renderer = 'checkbox', name = 'SettingEnableLocksmith',   description = 'SettingEnableLocksmithDescription',   default = true },
         { key = 'enableCommoner',    renderer = 'checkbox', name = 'SettingEnableCommoner',    description = 'SettingEnableCommonerDescription',    default = true },
+        { key = 'enableMuse',        renderer = 'checkbox', name = 'SettingEnableMuse',        description = 'SettingEnableMuseDescription',        default = true },
         { key = 'enableArcanist',     renderer = 'checkbox', name = 'SettingEnableArcanist',     description = 'SettingEnableArcanistDescription',     default = true },
         { key = 'enableReforger',     renderer = 'checkbox', name = 'SettingEnableReforger',     description = 'SettingEnableReforgerDescription',     default = true },
         { key = 'enableBlademeister', renderer = 'checkbox', name = 'SettingEnableBlademeister', description = 'SettingEnableBlademeisterDescription', default = true },
@@ -100,6 +103,7 @@ I.Settings.registerGroup {
         { key = 'enableBrawlerGauntlets', renderer = 'checkbox', name = 'SettingEnableBrawlerGauntlets', description = 'SettingEnableBrawlerGauntletsDescription', default = true },
         { key = 'enableApothecary',  renderer = 'checkbox', name = 'SettingEnableApothecary',  description = 'SettingEnableApothecaryDescription',  default = true },
         { key = 'enableForager',     renderer = 'checkbox', name = 'SettingEnableForager',     description = 'SettingEnableForagerDescription',     default = true },
+        { key = 'enableForagerGardeningXp', renderer = 'checkbox', name = 'SettingEnableForagerGardeningXp', description = 'SettingEnableForagerGardeningXpDescription', default = true },
     },
 }
 
@@ -171,6 +175,8 @@ I.Settings.registerGroup {
         { key = 'xpOnConcoctionHit', renderer = 'checkbox', name = 'SettingXpOnConcoctionHit', description = 'SettingXpOnConcoctionHitDescription', default = true },
         { key = 'xpOnTrapHit',       renderer = 'checkbox', name = 'SettingXpOnTrapHit',       description = 'SettingXpOnTrapHitDescription',       default = true },
         { key = 'xpOnOilBurn',       renderer = 'checkbox', name = 'SettingXpOnOilBurn',       description = 'SettingXpOnOilBurnDescription',       default = true },
+        { key = 'xpOnMltCritical',   renderer = 'checkbox', name = 'SettingXpOnMltCritical',   description = 'SettingXpOnMltCriticalDescription',   default = true },
+        { key = 'xpOnMltMobility',   renderer = 'checkbox', name = 'SettingXpOnMltMobility',   description = 'SettingXpOnMltMobilityDescription',   default = true },
         {
             key = 'xpMultiplier',
             renderer = 'number',
@@ -211,6 +217,10 @@ I.Settings.registerGroup {
         { key = 'integrateBullseye',       renderer = 'checkbox', name = 'SettingIntegrateBullseye',       description = 'SettingIntegrateBullseyeDescription',       default = true },
         { key = 'integrateGRIP',           renderer = 'checkbox', name = 'SettingIntegrateGRIP',           description = 'SettingIntegrateGRIPDescription',           default = true },
         { key = 'integrateBlademeister',   renderer = 'checkbox', name = 'SettingIntegrateBlademeister',   description = 'SettingIntegrateBlademeisterDescription',   default = true },
+        { key = 'integrateSolTimedDirAttacks',      renderer = 'checkbox', name = 'SettingIntegrateSolTimedDirAttacks',      description = 'SettingIntegrateSolTimedDirAttacksDescription',      default = true },
+        { key = 'integrateSolWeightyChargeAttacks', renderer = 'checkbox', name = 'SettingIntegrateSolWeightyChargeAttacks', description = 'SettingIntegrateSolWeightyChargeAttacksDescription', default = true },
+        { key = 'integrateMoveLikeThis',            renderer = 'checkbox', name = 'SettingIntegrateMoveLikeThis',            description = 'SettingIntegrateMoveLikeThisDescription',            default = true },
+        { key = 'integrateBardcraft',               renderer = 'checkbox', name = 'SettingIntegrateBardcraft',               description = 'SettingIntegrateBardcraftDescription',               default = true },
         -- Crafting / mining
         { key = 'integrateWeaponUpgrade',  renderer = 'checkbox', name = 'SettingIntegrateWeaponUpgrade',  description = 'SettingIntegrateWeaponUpgradeDescription',  default = true },
         { key = 'integrateArmorUpgrade',   renderer = 'checkbox', name = 'SettingIntegrateArmorUpgrade',   description = 'SettingIntegrateArmorUpgradeDescription',   default = true },

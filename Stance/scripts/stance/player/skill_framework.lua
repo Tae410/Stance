@@ -49,6 +49,13 @@ function M.new(ctx)
     local getStanceXp           = ctx.getStanceXp
     local effectivenessSkillBonus = ctx.effectivenessSkillBonus
     local getStanceEvasionBonus = ctx.getStanceEvasionBonus or function() return 0 end
+    local getStanceTimedBonus       = ctx.getStanceTimedBonus       or function() return 0 end
+    local getStanceWeightyBonus     = ctx.getStanceWeightyBonus     or function() return 0 end
+    local getStanceTimedSignature   = ctx.getStanceTimedSignature   or function() return '' end
+    local getStanceWeightySignature = ctx.getStanceWeightySignature or function() return '' end
+    local getMuseBuffInfo            = ctx.getMuseBuffInfo            or function() return nil end
+    local getMuseSongTitlesForStance = ctx.getMuseSongTitlesForStance or function() return {} end
+    local getMusePerformanceStatus   = ctx.getMusePerformanceStatus   or function() return nil end
     -- Additive Block bonus while "fortified" (shield + one-handed melee stance).
     -- Returns 0 when not fortified / not provided. Replaces the deprecated
     -- Fortifier stance's Block effectiveness.
@@ -59,6 +66,13 @@ function M.new(ctx)
     -- not provided. Folded into the handtohand contribution below, alongside the
     -- Brawler effectiveness bonus, through the same native delta-modifier path.
     local currentBrawlerGauntletHhBonus = ctx.currentBrawlerGauntletHhBonus
+        or function() return 0 end
+    -- Additive weapon-skill bonus while the Smoking buff is active (Hackle-Lo pipe
+    -- held or its lingering window still running). Fixed at +10; level governs only
+    -- the buff duration. Added on top of the effectiveness bonus for the active
+    -- stance's target skill through the same native delta path, so it stacks with
+    -- all other modifiers and clears the instant the buff expires.
+    local currentSmokingWeaponBonus = ctx.currentSmokingWeaponBonus
         or function() return 0 end
     -- Returns tooltip note lines for the name prefixes active on a stance
     -- (Sneaky / Fortified / imbue element). Empty when none / not provided.
@@ -312,6 +326,10 @@ function M.new(ctx)
         -- fractional tiers (e.g. +2.5). 0 unless Brawler is active with hand armor
         -- (refreshBrawlerGauntlet gates the tier on stance + setting).
         local gauntletHhRaw = currentBrawlerGauntletHhBonus() or 0
+        -- Smoking weapon-skill bonus: +10 flat while the Hackle-Lo buff is active.
+        -- Applied as an integer addend on top of targetBonus (or the handtohand
+        -- combo) so it stacks cleanly with effectiveness, fortified, and gauntlets.
+        local smokingBonus = math.floor((currentSmokingWeaponBonus() or 0) + 0.5)
         -- Raw effectiveness for the active stance's target skill, used only for the
         -- handtohand combine (Brawler is the sole stance whose target is handtohand).
         local rawTargetEff = (targetSkill and effectivenessSkillBonus(getActiveStance())) or 0
@@ -319,14 +337,18 @@ function M.new(ctx)
             local contrib
             if sid == 'handtohand' then
                 -- Effectiveness (only when handtohand is the target, i.e. Brawler) +
-                -- the gauntlet bonus, summed RAW then rounded once. Both addends are
-                -- 0 outside Brawler, so handtohand clears to 0 like any other skill.
-                -- With no gauntlets this equals the plain effectiveness bonus, so the
-                -- non-gauntlet Brawler case is unchanged.
-                local effPart = (targetSkill == 'handtohand') and rawTargetEff or 0
-                contrib = math.floor(effPart + gauntletHhRaw + 0.5)
+                -- gauntlet bonus + smoking bonus, summed RAW then rounded once. All
+                -- addends are 0 outside Brawler, so handtohand clears to 0 like any
+                -- other skill. With no gauntlets or smoking this equals the plain
+                -- effectiveness bonus, so those non-Smoking Brawler cases are unchanged.
+                local effPart  = (targetSkill == 'handtohand') and rawTargetEff or 0
+                local smokHh   = (targetSkill == 'handtohand') and smokingBonus or 0
+                contrib = math.floor(effPart + gauntletHhRaw + 0.5) + smokHh
             else
-                contrib = (sid == targetSkill) and targetBonus or 0
+                -- For every other weapon skill: base effectiveness bonus + the flat
+                -- smoking bonus (0 when not smoking). Block also accumulates the
+                -- fortified shield bonus on top.
+                contrib = (sid == targetSkill) and (targetBonus + smokingBonus) or 0
                 if sid == 'block' then contrib = contrib + blockBonus end
             end
             setVanillaEffContrib(sid, contrib)
@@ -368,7 +390,7 @@ function M.new(ctx)
         --   Lv N   Core N   +N <Skill>      (mechanic toggle)
         --   N / N xp  (or Mastered)         (mechanic toggle)
         --
-        --   [✓] Perk — Short description.
+        --   [*] Perk — Short description.
         --   [LvN] Perk — Short description.
 
         -- Friendly display names for all skill IDs used as bonus targets.
@@ -441,7 +463,74 @@ function M.new(ctx)
                 table.insert(statParts, string.format('+%d %s', evasionBonus, evasionLabel))
             end
             table.insert(lines, table.concat(statParts, '   '))
+
+            -- Sol combat-mod mastery (timed directional / weighty charged
+            -- attack), applied to the stance's own weapon skill. Shown on their
+            -- OWN lines (not crammed onto the stat line, where they could wrap
+            -- off-screen) and shown whenever the relevant Sol mod is DETECTED and
+            -- this stance has that affinity — even at +0 — so the distinctiveness
+            -- is legible from the start and visibly grows as the stance levels
+            -- (the bonus ramps from 0 at the start level to its ceiling at 100).
+            if skillLabel ~= 'none' then
+                local timedSig = getStanceTimedSignature(stanceId)
+                if integrationPresent('soltimeddirattacks') and timedSig ~= '' then
+                    local timedBonus = math.floor((getStanceTimedBonus(stanceId) or 0) + 0.5)
+                    table.insert(lines, string.format('+%d %s  (Timed - %s)', timedBonus, skillLabel, timedSig))
+                end
+                local weightySig = getStanceWeightySignature(stanceId)
+                if integrationPresent('solweightychargeattacks') and weightySig ~= '' then
+                    local weightyBonus = math.floor((getStanceWeightyBonus(stanceId) or 0) + 0.5)
+                    table.insert(lines, string.format('+%d %s  (Weighty - %s)', weightyBonus, skillLabel, weightySig))
+                end
+            end
             table.insert(lines, xpLine)
+
+            -- Move Like This: surface this stance's signature directional
+            -- move(s) so the player can read what makes it distinct in combat.
+            -- Descriptive only — MLT applies the effects itself; the active
+            -- stance's weapon-skill mastery (effectiveness + Sol bonuses)
+            -- sharpens the skill-scaled ones (crit / stagger / mobility / blind /
+            -- cleave) as the stance levels.
+            if integrationPresent('movelikethis') then
+                local sig = config.mltSignature and config.mltSignature[stanceId]
+                if sig and sig.moves then
+                    table.insert(lines, string.format('Move Like This - %s', sig.moves))
+                end
+            end
+
+            -- Muse (Bardcraft): a live inspiration-buff countdown on a buffed
+            -- stance, which songs are known to buff this stance, and — on the
+            -- Muse stance itself — the in-progress performance ledger. The
+            -- description is rebuilt every tick, so the countdown updates live.
+            if integrationPresent('bardcraft') then
+                local buff = getMuseBuffInfo(stanceId)
+                if buff then
+                    local rem = math.max(0, math.floor((buff.remaining or 0) + 0.5))
+                    local mm, ss = math.floor(rem / 60), rem % 60
+                    local src = buff.songTitle and (" from '" .. buff.songTitle .. "'") or ''
+                    table.insert(lines, string.format('Muse: +%d %s inspiration%s  (%d:%02d left)',
+                        buff.magnitude or 0, skillLabel, src, mm, ss))
+                end
+                local titles = getMuseSongTitlesForStance(stanceId)
+                if titles and #titles > 0 then
+                    local shown = {}
+                    for i = 1, math.min(#titles, 3) do shown[i] = titles[i] end
+                    local more = (#titles > 3) and (' +' .. (#titles - 3) .. ' more') or ''
+                    table.insert(lines, string.format('Muse songs: %s%s', table.concat(shown, ', '), more))
+                end
+                if stanceId == 'muse' then
+                    local ps = getMusePerformanceStatus()
+                    if ps then
+                        local t = math.max(0, math.floor((ps.accum or 0) + 0.5))
+                        table.insert(lines, string.format(
+                            "Performing '%s' -> %s   buffer %ds   loop %d/%d   notes %d/%d",
+                            ps.songTitle or '?', ps.stance or '?', t,
+                            ps.loop or 0, ps.allowed or 1, ps.successes or 0, ps.notes or 0))
+                    else
+                        table.insert(lines, 'Play a song idly (Practice) to weave inspiration into a stance.')
+                    end
+                end
+            end
         end
 
         -- Perks: name + short description only; no verbose sub-headers.
@@ -452,7 +541,7 @@ function M.new(ctx)
                 local unlocked = coreLevel >= perk.level
                 if unlocked or not unlockedOnly then
                     if first then table.insert(lines, ''); first = false end
-                    local marker = unlocked and '✓' or ('Lv' .. perk.level)
+                    local marker = unlocked and '*' or ('Lv' .. perk.level)
                     table.insert(lines, string.format('  [%s] %s — %s',
                         marker, perk.name, perk.description))
                 end
