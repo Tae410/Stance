@@ -572,6 +572,7 @@ local refreshSmoking             = prefixes.refreshSmoking
 local clearSmokingSpeedOffset    = prefixes.clearSmokingSpeedOffset
 local currentFortifiedBlockBonus = prefixes.currentFortifiedBlockBonus
 local currentSmokingWeaponBonus  = prefixes.currentSmokingWeaponBonus
+local currentSmokeRemaining      = prefixes.currentSmokeRemaining
 local isSmokingActive            = prefixes.isSmokingActive
 local getActivePrefixNotes       = prefixes.getActivePrefixNotes
 local getActivePrefixIcons       = prefixes.getActivePrefixIcons

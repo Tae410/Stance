@@ -96,30 +96,26 @@ function M.new(ctx)
     -- saved:
     --
     --   * pipeEquipped — a Hackle-Lo pipe variant is in the off-hand (CarriedLeft)
-    --     slot. Drives the cosmetic "Smoking" name prefix. The prefix shows on the
-    --     active stance for ANY stance whose left hand is free to hold the pipe;
-    --     Brawler (fists) and Arcanist (readied spell) are excluded because they
-    --     cannot visually hold it (SMOKING_EXCLUDED_STANCES).
+    --     slot. Used only for the "a pipe is at the ready" hint shown before you
+    --     have smoked anything.
     --
-    --   * smokingActive — the player is ACTIVELY, SUCCESSFULLY smoking: the pipe is
-    --     equipped AND a Hackle-Lo smoke potion is currently in effect AND the
-    --     active stance is allowed to smoke. ONLY this flag grants the flat +10
-    --     weapon-skill bonus. The pipe mod's own script consumes a hackle-lo leaf
-    --     on a successful smoke and applies a `pe_hackle-lo_smoke*` potion (an ALCH
-    --     with a 60 s+ duration); the presence of that potion in the player's active
-    --     spells is the authoritative "smoked a leaf successfully" signal. The
-    --     no-leaf fallback potion (`pe_hackle-lo_smoke_dagoth_empty`) is deliberately
-    --     NOT in the set, so puffing the dried resins of an empty pipe shows the
-    --     prefix but grants no bonus.
+    --   * smokingActive — a Hackle-Lo smoke potion is currently in effect. This
+    --     alone drives BOTH the "Smoking" name prefix and the flat +10 weapon-skill
+    --     bonus, so the buff lasts exactly as long as the smoke itself: it persists
+    --     for the full smoke duration even after the pipe is put away, and it
+    --     applies to EVERY stance (no stance is excluded). The pipe mod consumes a
+    --     hackle-lo leaf on a successful smoke and applies a `pe_hackle-lo_smoke*`
+    --     potion (an ALCH with a 60 s+ duration); the presence of that potion in the
+    --     player's active spells is the authoritative "smoked a leaf" signal, and
+    --     its remaining duration is the tooltip buff timer. The no-leaf fallback
+    --     potion (`pe_hackle-lo_smoke_dagoth_empty`) is deliberately NOT in the set,
+    --     so puffing the dried resins of an empty pipe grants no buff.
     --
-    -- Because smokingActive requires the pipe to STILL be equipped, putting the pipe
-    -- away clears BOTH the prefix and the bonus on the very next tick — the smoke
-    -- potion's lingering magic effects no longer keep the bonus alive. There is no
-    -- separate lingering timer.
-    local SMOKING_EXCLUDED_STANCES = {
-        brawler  = true,   -- unarmed: hands are fists, cannot hold the pipe
-        arcanist = true,   -- readied spell occupies the casting hand
-    }
+    -- The prefix shows while smokingActive (the timer runs) OR while a pipe is held
+    -- (ready to smoke); the +10 bonus is granted while smokingActive. Putting the
+    -- pipe away no longer clears the buff — only the smoke effect ending does.
+    -- (The pipe's own Speed-drain downside is likewise neutralised for exactly as
+    -- long as the smoke effect lasts; see scanActiveSmoke / applySmokeSpeedOffset.)
     local HACKLE_LO_PIPE_IDS = {
         ['hackle-lo pipe']                  = true,
         ['hackle-lo pipe - mushroom']       = true,
@@ -164,6 +160,7 @@ function M.new(ctx)
     }
     local pipeEquipped     = false   -- Hackle-Lo pipe in the off-hand (drives prefix)
     local smokingActive    = false   -- actively smoking a leaf (drives +10 bonus)
+    local smokeRemaining   = 0       -- seconds left on the active smoke buff (for the tooltip timer)
     local smokeSpeedContrib = 0      -- our own Speed-modifier delta (offsets the drain)
 
     local function formatStanceName(stanceId)
@@ -183,11 +180,12 @@ function M.new(ctx)
         if sneakyActive then
             name = 'Sneaky ' .. name
         end
-        -- Smoking outermost of all: shown whenever a Hackle-Lo pipe is equipped,
-        -- on any stance that can hold it (Brawler/Arcanist excluded). The bonus
-        -- (smokingActive) is separate — the prefix only needs the pipe in hand.
+        -- Smoking outermost of all: shown while a hackle-lo smoke is active (the
+        -- buff is running) OR a pipe is at the ready, on EVERY stance — the buff
+        -- persists for the smoke's full duration regardless of the pipe, so the
+        -- prefix follows the timer rather than the pipe.
         -- e.g. "Smoking Sneaky Fortified Soloist".
-        if pipeEquipped and not SMOKING_EXCLUDED_STANCES[stanceId] then
+        if smokingActive or pipeEquipped then
             name = 'Smoking ' .. name
         end
         return name
@@ -505,15 +503,6 @@ function M.new(ctx)
         return HACKLE_LO_PIPE_IDS[recordId:lower()] == true
     end
 
-    -- Whether the ACTIVE stance is allowed to smoke — i.e. its left hand is free
-    -- to hold the pipe. Brawler (fists) and Arcanist (readied spell) are excluded
-    -- because they cannot visually wield the pipe, so they get neither the prefix
-    -- nor the bonus. Every other stance qualifies.
-    local function activeStanceCanSmoke()
-        local sid = getActiveStance()
-        return sid ~= nil and not SMOKING_EXCLUDED_STANCES[sid]
-    end
-
     -- Scan the player's active spells ONCE and report two things:
     --   smoking    — whether a SUCCESSFUL-smoke potion (`pe_hackle-lo_smoke*`,
     --                excluding the no-leaf "_empty" fallback) is in effect. The
@@ -527,8 +516,8 @@ function M.new(ctx)
     local function scanActiveSmoke()
         local active = nil
         local ok = pcall(function() active = types.Actor.activeSpells(self) end)
-        if not ok or not active then return false, 0 end
-        local smoking, speedDrain = false, 0
+        if not ok or not active then return false, 0, 0 end
+        local smoking, speedDrain, remaining = false, 0, 0
         pcall(function()
             for _, params in pairs(active) do
                 local id = params and params.id
@@ -537,11 +526,24 @@ function M.new(ctx)
                     if SMOKE_POTION_IDS[lid] then
                         smoking    = true
                         speedDrain = speedDrain + (SMOKE_SPEED_DRAIN[lid] or 0)
+                        -- Longest remaining effect duration of this smoke potion,
+                        -- read straight from the engine's active-spell bookkeeping
+                        -- so it counts down on its own in real time. The field is
+                        -- `durationLeft` (older builds: `timeLeft`); if neither is
+                        -- present this stays 0 and the timer is simply omitted.
+                        if params.effects then
+                            for _, eff in pairs(params.effects) do
+                                local dl = eff and (eff.durationLeft or eff.timeLeft)
+                                if type(dl) == 'number' and dl > remaining then
+                                    remaining = dl
+                                end
+                            end
+                        end
                     end
                 end
             end
         end)
-        return smoking, speedDrain
+        return smoking, speedDrain, remaining
     end
 
     -- Apply our Speed-modifier contribution using the engine-native attribute
@@ -588,10 +590,16 @@ function M.new(ctx)
 
         pipeEquipped = isHackleLoPipeEquipped()
 
-        local smokeActive, speedDrain = scanActiveSmoke()
-        smokingActive = pipeEquipped
-            and activeStanceCanSmoke()
-            and smokeActive
+        local smokeActive, speedDrain, remaining = scanActiveSmoke()
+        -- The buff now lasts exactly as long as the smoke effect itself: it is
+        -- driven SOLELY by an active hackle-lo smoke potion, independent of
+        -- whether the pipe is still equipped and of which stance is active. So
+        -- the +10 persists for the full smoke duration even after the pipe is
+        -- put away, and applies to whatever stance you wield (all stances).
+        smokingActive = smokeActive
+
+        -- Remaining smoke time, surfaced as the tooltip buff timer.
+        smokeRemaining = smokingActive and (remaining or 0) or 0
 
         -- Cancel the pipe's Speed drain (positive offset == drain magnitude).
         applySmokeSpeedOffset(speedDrain)
@@ -617,6 +625,12 @@ function M.new(ctx)
     -- AND actively smoking), for UI consumers.
     local function isSmokingActive()
         return smokingActive == true
+    end
+
+    -- Seconds remaining on the active smoke buff (0 when not actively smoking).
+    -- Read live from the engine each tick, so consumers get a real-time countdown.
+    local function currentSmokeRemaining()
+        return smokingActive and (smokeRemaining or 0) or 0
     end
 
 
@@ -702,10 +716,20 @@ function M.new(ctx)
         -- Smoking: shown while a Hackle-Lo pipe is equipped (the prefix only needs
         -- the pipe in hand). The +10 bonus applies only while actively smoking a
         -- leaf (smokingActive); merely holding the pipe prompts the player to smoke.
-        if pipeEquipped and not SMOKING_EXCLUDED_STANCES[stanceId] then
+        -- Smoking: the buff runs for the smoke's full duration (see the timer),
+        -- on every stance, whether or not the pipe is still in hand. The "ready"
+        -- hint shows when a pipe is held but no smoke is active yet.
+        if smokingActive or pipeEquipped then
             if smokingActive then
-                notes[#notes + 1] =
-                    "Smoking: hackle-lo smoke sharpens your focus — +10 to this stance's weapon skill while you keep smoking."
+                local rem = smokeRemaining or 0
+                local timer = ''
+                if rem > 0 then
+                    timer = string.format(' (%d:%02d left)',
+                        math.floor(rem / 60), math.floor(rem % 60))
+                end
+                notes[#notes + 1] = string.format(
+                    "Smoking: hackle-lo smoke sharpens your focus — +10 to this stance's weapon skill while the buff lasts%s.",
+                    timer)
             else
                 notes[#notes + 1] =
                     "Smoking: a Hackle-Lo pipe is at the ready. Smoke a hackle-lo leaf with it to gain +10 to this stance's weapon skill."
@@ -738,10 +762,10 @@ function M.new(ctx)
     local function getActivePrefixIcons(stanceId)
         if stanceId ~= getActiveStance() then return {} end
         local icons = {}
-        -- Smoking outermost (leftmost in the name): shown whenever a Hackle-Lo
-        -- pipe is held on a stance that can wield it. Mirrors the prefix exactly
-        -- (pipe equipped, not Brawler/Arcanist) — independent of the +10 bonus.
-        if pipeEquipped and not SMOKING_EXCLUDED_STANCES[stanceId] then
+        -- Smoking outermost (leftmost in the name): shown while a hackle-lo
+        -- smoke is active OR a pipe is held, on every stance. Mirrors the prefix
+        -- exactly (follows the timer, not the pipe).
+        if smokingActive or pipeEquipped then
             icons[#icons + 1] = SMOKING_ICON_PATH
         end
         if sneakyActive then
@@ -811,6 +835,7 @@ function M.new(ctx)
         refreshSmoking             = refreshSmoking,
         clearSmokingSpeedOffset    = clearSmokingSpeedOffset,
         currentSmokingWeaponBonus  = currentSmokingWeaponBonus,
+        currentSmokeRemaining      = currentSmokeRemaining,
         isSmokingActive            = isSmokingActive,
         -- Brawler gauntlet tradeoff (hand-armor weight class while unarmed):
         refreshBrawlerGauntlet            = refreshBrawlerGauntlet,
