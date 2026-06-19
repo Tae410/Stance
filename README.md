@@ -44,8 +44,8 @@ own events live in the `Stance_*` namespace.
 | **N'Garde** | Parry success → parry XP for the **active** stance, with a larger reward for a perfect parry (`ngarde_parrySelf` carries the `isPerfect` flag) |
 | **Gothic Style Knockout** | Brawler knockout-chance proc via `GKD_DoKnockdown` |
 | **Evasion!** | Surfaces the dodge/Sanctuary bonus in the tooltip with an "Evasion!" attribution (the two contributions track separate deltas and never interfere) |
-| **Sol's Timed Directional Attacks** | Detected via its settings section (`Settings_SolTimedDirAttacks`). Tempo-driven stances gain a passive weapon-skill bonus — *timed-directional-attack mastery* — ceilinged from STDA's own `buffBase` and scaled by stance level. See *Sol combat-mod mastery* below |
-| **Sol's Weighty Charged Attacks** | Detected via its settings section (`Settings_SolWeightyChargeAttacks`). Heavy, committed stances gain a passive weapon-skill bonus — *weighty-charged-attack mastery* — ceilinged from SWCA's own `buffBase`/`maxCharge` and the equipped weapon's weight, and scaled by stance level. See *Sol combat-mod mastery* below |
+| **Sol's Timed Directional Attacks** | Detected via its settings section (`Settings_SolTimedDirAttacks`). Tempo-driven stances gain a passive weapon-skill bonus — *timed-directional-attack mastery* — ceilinged from STDA's own `buffBase` and scaled by the core Stance level. See *Sol combat-mod mastery* below |
+| **Sol's Weighty Charged Attacks** | Detected via its settings section (`Settings_SolWeightyChargeAttacks`). Heavy, committed stances gain a passive weapon-skill bonus — *weighty-charged-attack mastery* — ceilinged from SWCA's own `buffBase`/`maxCharge` and the equipped weapon's weight, and scaled by the core Stance level. See *Sol combat-mod mastery* below |
 | **Move Like This** | Detected via its settings section (`Settings_MoveLikeThis`). Each melee stance's signature directional move(s) are surfaced in its tooltip, and landing one of MLT's two attacker-notified moves (a critical thrust or a mobility slash) grants the active stance extra XP. See *Move Like This — weapon distinctiveness* below |
 | **Bardcraft** | Detected via its Skill Framework skill (`bardcraft`). Powers the **Muse** stance: idle performances activate Muse, and finishing a song grants a timed inspiration buff to the stance the song is associated with. See *Muse - the bard's stance* below |
 
@@ -63,6 +63,7 @@ own events live in the `Stance_*` namespace.
 | Mod | What Stance! reads from it |
 |---|---|
 | **Spellsword** (Imbule Weapon) | Reads the imbue state (`IW_ActiveSpell` → `activeSpell`) to prepend a **cosmetic element prefix** to the stance name — see *Stance name prefixes* below. No XP/perks/resolver effect |
+| **Hackle-Lo Pipes** (Smoker prefix) | Detects an equipped pipe to show a **Smoking** prefix on the stance name; smoking a hackle-lo leaf grants a temporary additive weapon-skill bonus to the active stance's weapon skill (an extended core-level-gated window — 20s at core 5, +15s every 10 core levels (no longer halved)), and cancels the pipe's Speed drain for the full smoke. Toggle under **Integrations** |
 | **Incantation** | Arcanist spellcasting XP via the `spellcast` animation text-key |
 | **Meditation Skill** | Arcanist tick XP via the SkillProgression hook |
 | **Disenchanting** | Arcanist / Thaumaturge XP via `disenchanting_finishedDisenchanting` |
@@ -132,16 +133,17 @@ list of detection rules. **The first rule whose signal fires wins.** There are
 
 ### Stance name prefixes
 
-Three transient states **decorate** the active stance's displayed name (in the
+Four transient states **decorate** the active stance's displayed name (in the
 HUD indicator and the skill tooltip) without changing which stance is active.
-They compose, outermost-first, as **Sneaky → Fortified → element → base** — e.g.
-`Sneaky Fortified Blazed Soloist`.
+They compose, outermost-first, as **Smoking → Sneaky → Fortified → element →
+base** — e.g. `Smoking Sneaky Fortified Blazed Soloist`.
 
 | Prefix | Appears when | Scope | Effect |
 |---|---|---|---|
+| **Smoking** | A Hackle-Lo pipe is in the off-hand / a hackle-lo smoke is active | **Every** stance (requires the Hackle-Lo Pipes mod) | A temporary additive weapon-skill bonus while the smoke buff window is live — gated to the core Stance level and extended (20s at core 5, +15s every 10 core levels; no longer halved); also cancels the pipe's Speed drain for the full smoke |
 | **Sneaky** | You are crouched / sneaking (`self.controls.sneak`) | **Every** stance | Cosmetic only |
 | **Fortified** | A shield is equipped alongside a one-handed melee weapon | Soloist, Thief, Mjölnir, Axeman, Blademeister | Cosmetic **+** an additive **Block** skill bonus that scales with your own Block skill while equipped |
-| **Blazed / Frozen / Electrified** | Spellsword has imbued your weapon with fire / frost / shock | Any stance that wields an imbuable weapon (everything except Arcanist, Commoner, Locksmith, Reforger) | Cosmetic only |
+| **Blazed / Frozen / Electrified** | Spellsword has imbued your weapon with fire / frost / shock | Any stance that wields an imbuable weapon (everything except Arcanist, Commoner, Locksmith, Reforger, Muse) | Cosmetic only |
 
 > **Fortifier was deprecated into the "Fortified" prefix.** Earlier versions had
 > a standalone *Fortifier* stance for "shield equipped". That stance is gone: a
@@ -177,8 +179,8 @@ integration reads each mod's **own live settings** to size the bonus instead.
   stance gives a weightier bonus. Each stance names its signature blow (Smite,
   Cleave, Set Spear, Power Thrust, Forge Blow).
 
-In both cases the bonus **scales with the stance's own level**, on the same
-linear ramp the effectiveness and evasion bonuses use: 0 at the start level
+In both cases the bonus **scales with the core Stance level**, on the same
+linear ramp the effectiveness bonus uses: 0 at the start level
 rising to the full ceiling at level 100. A few weapons that play either way
 appear under both systems, weighted toward their dominant character; tool,
 activity, and caster stances have no affinity. The applicable stances, signature
@@ -237,7 +239,7 @@ timer: a **clean note adds** `successSeconds` and drains **2 fatigue**; a
 **fumbled note subtracts** `failSeconds` and drains **4 fatigue**. When the song
 ends, the accumulated time (floored at zero) becomes the **duration** of an
 *inspiration* buff applied to the associated stance - a temporary bonus to that
-stance's weapon skill (magnitude scales with Muse level), delivered through the
+stance's weapon skill (magnitude scales with your Bardcraft skill), delivered through the
 same delta-accounted path as every other Stance bonus, so it stacks cleanly.
 
 **Muse levels** from carrying idle songs to completion and from successfully
@@ -265,9 +267,8 @@ Two layers work together:
 saved in your character's data. Only the **active** stance earns XP — whatever
 you are doing trains the stance you currently hold. Switch weapons and the
 stance you were in is **banked exactly as it was**; the new stance picks up from
-its own saved level. A stance's own level scales its **effectiveness** (a smooth
-ramp from 100% at the start level to 150% at level 100, delivered as a +2→+20
-bonus to that stance's target skill), shown in the tooltip.
+its own saved level. A stance's own level governs its **perks** (below); its
+**bonuses**, however, scale on the core level (also below).
 
 **The core Stance skill.** The single skill Skill Framework displays. Its row
 in the character sheet (under the **Stance** subsection, via Stats Window
@@ -276,24 +277,37 @@ blade and it reads `Commoner`; draw a longsword behind a shield while crouched
 and it reads `Sneaky Fortified Soloist`. Its **icon** tracks the stance too:
 the same `icons/Stance/<X>.dds` glyph the HUD shows is drawn on the combat-skill
 frame, so the stats-menu row and its hover tooltip always match the HUD.
-Whenever the active stance gains XP,
-the core skill gains **half** of that amount and levels **independently**. So each individual stance levels roughly twice as fast
-as the core skill, and the core skill is a running measure of your overall
-stance mastery that never resets when you switch.
+Whenever the active stance gains XP, the core skill gains only a **small fraction**
+of that amount — **half**, divided again by the progression slowdown (so roughly
+**one sixth** at the default settings) — and levels **normally**, like any other
+skill. So each individual stance levels **several times faster** than the core
+skill, which is a slow running measure of your overall stance mastery that never
+resets when you switch.
+There is **no rest requirement** — stance XP and core XP both flow continuously.
 
-**Perks come from the core skill.** A perk is active once your **core** Stance
-skill reaches its threshold (25 / 50 / 75 / 100) — and that applies to *every*
-stance at once. Reach core level 25 and every stance's level-25 perk unlocks;
-the active stance just decides which ladder is shown.
+**Perks unlock on the stance's OWN level.** A perk is active once *that stance's*
+level reaches its threshold (25 / 50 / 75 / 100). Commoner's perks are gated on
+the Commoner level, Soloist's on the Soloist level, and so on — each stance's
+ladder is independent.
 
-> Example: fighting as Commoner grants Commoner 6 XP and the core skill 3 XP.
-> Commoner's own level climbs quickly; the core skill climbs at half pace. When
-> the core skill hits 25, the level-25 perk unlocks for Commoner — and for every
-> other stance too.
+**Bonuses scale on the CORE level.** A stance's magnitude bonuses — its
+weapon-skill **effectiveness** (+2 at the start level, +2 every 5 levels, up to
++20), the **Sol** timed/weighty mastery, **Move Like This**, and **Brawler**'s
+unarmored bonus — grow with the **core** Stance level, so all stances strengthen
+together as your overall mastery rises. Two exceptions: **Block**'s fortified
+bonus already scales with the Block skill and is left alone, and the **Muse**
+stance's bonuses scale with your **Bardcraft** skill (a better bard plays
+stronger inspiration) rather than the core level.
+
+> Example: fighting as Commoner grants Commoner 6 XP and the core skill ~1 XP
+> (half, then divided by the slowdown). Commoner's own level climbs several
+> times faster than the core skill. Commoner's level-25 perk unlocks when
+> **Commoner** reaches 25, while its effectiveness bonus steps up (+2 every 5
+> levels) as the **core** skill climbs.
 
 ### XP sources
 
-Each source trains the **active** stance (and feeds the core skill at half rate)
+Each source trains the **active** stance (and feeds the core skill at a reduced rate — about one sixth)
 only while that stance is enabled. Every source has its own toggle under
 **Progression**, and every amount is scaled by the global **XP Multiplier**.
 
