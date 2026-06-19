@@ -146,6 +146,21 @@ function M.new(ctx)
         show(pickLine(c.onKill, c.avoidImmediateRepeat))
     end
 
+    -- Soul Resonance pact lines, spoken on the Blademeister meter transitions.
+    -- These bypass the idle scheduler (they are event-driven) but still respect
+    -- the master gate. Text lives in config.felthornAmbient.resonance / .exhaustion.
+    function api.sayResonance(activeStanceId)
+        if not shouldSpeak(activeStanceId) then return end
+        local c = cfg()
+        show(pickLine(c.resonance, c.avoidImmediateRepeat))
+    end
+
+    function api.sayExhausted(activeStanceId)
+        if not shouldSpeak(activeStanceId) then return end
+        local c = cfg()
+        show(pickLine(c.exhaustion, c.avoidImmediateRepeat))
+    end
+
     return api
 end
 

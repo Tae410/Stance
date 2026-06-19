@@ -76,7 +76,7 @@ Rules:
 - **`attribute`** must be a valid lowercase OpenMW attribute id: `strength`, `intelligence`, `willpower`, `agility`, `speed`, `endurance`, `personality`, `luck`. This is what the chameleon Stance skill swaps to while your stance is active (unless the player disabled attribute-swap).
 - **`integrations`** lists integration ids the stance depends on (see the integrations table in the README). Leave `{}` for a pure-vanilla stance like Flailman.
 - **`icon`** is the VFS path to the stance's icon — a `.dds` placed in `icons/Stance/` (any size; it is scaled to fit). It is used in **two** places: the HUD indicator, and the foreground glyph of the core Stance skill's icon in the stats menu / hover tooltip (drawn on the shared combat-skill frame), so both always match. The path is the field value verbatim, so its filename need not match `id` or `displayName` (e.g. the `pitmen` stance uses `Pitman.dds`). If you omit `icon`, the HUD gracefully shows just the stance name and the skill keeps the frame-only icon for that stance.
-- **`perks`** must have exactly **four** entries at levels **25 / 50 / 75 / 100**. The `id` of each perk is what you'll test against in perk logic (Step 7). The `level` is the **core Stance skill** threshold, not your stance's own level.
+- **`perks`** must have exactly **four** entries at levels **25 / 50 / 75 / 100**. The `id` of each perk is what you'll test against in perk logic (Step 7). The `level` is the **individual stance's own level** threshold (e.g. a Commoner perk unlocks at Commoner level 25), not the core level.
 
 That's the data. Nothing here makes the stance *do* anything yet.
 
@@ -84,7 +84,7 @@ That's the data. Nothing here makes the stance *do* anything yet.
 
 ## 2. Set the target skill — `STANCE_SKILL_TARGET` in `init.lua`
 
-This table maps each stance id to the skill that receives its level-scaled bonus (+2 at stance level 5, up to +20 at 100). Add your entry:
+This table maps each stance id to the skill that receives its level-scaled bonus (+2 at **core** level 5, up to +20 at core 100 — bonuses scale on the core level, except Muse, which scales on Bardcraft). Add your entry:
 
 ```lua
 flailman = { vanilla = 'bluntweapon' },
@@ -229,7 +229,7 @@ If you ship other language files, add the keys there too (English is the fallbac
 
 ## 7. Implement perk logic — `perks.lua` (optional but usual)
 
-Perks come in two flavors. Both live in `perks.lua` and both gate on the **core** Stance level via the local `cl` (core level) and the active stance id `sid`.
+Perks come in two flavors. Both live in `perks.lua` and both gate on the **active stance's own level** via the local `cl` (set to `getStanceLevel(sid)`) and the active stance id `sid`. (Bonuses, by contrast, gate on the core level — see Step 5.)
 
 ### 7a. Passive stat perks (attributes / skills)
 
@@ -379,6 +379,6 @@ Per new stance id `myStance`:
 - **Specific beats general in the resolver.** If your weapon is a subtype of an existing category, your branch goes above the category's branch.
 - **Never write stat modifiers directly from perks.** Use the contribution tables so delta accounting handles save/load and multi-mod stacking.
 - **Cede shared vanilla skills.** If another mod actively rewrites a vanilla skill's modifier, don't fight it — route your bonus elsewhere or let that mod mirror it. (Block's shield-driven slice is owned by the Fortified state; Marksman by Throwing!.)
-- **Four perks, at 25/50/75/100, gated on core level.** Keep to the established cadence so the perk UI and notifications behave.
+- **Four perks, at 25/50/75/100, gated on the stance's own level.** Keep to the established cadence so the perk UI and notifications behave.
 - **Degrade gracefully.** If your stance leans on an integration, guard every integration call so the stance still works (minus the integration-specific perks) when the mod is absent.
 - **Prefixes are decoration, not state.** A new stance is automatically Sneaky-eligible and imbuable; only opt into Fortifiable when it's truly a one-handed melee stance. If you add a new prefix, follow the cached-flag + per-tick-refresh + `formatStanceName`-branch pattern (§8c).

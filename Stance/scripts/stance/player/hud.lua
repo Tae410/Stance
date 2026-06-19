@@ -75,6 +75,9 @@ function M.new(ctx)
     -- that decorate the stance NAME, so the icons and the name always agree. The
     -- icons are rendered in a row beside the stance icon (see buildChildren).
     local getActivePrefixIcons = ctx.getActivePrefixIcons or function() return {} end
+    -- Ordered list of active buff bars to stack under the stance name. Each entry:
+    -- { key, ratio (0..1), tex (vfs path), r, g, b }. nil/empty when none active.
+    local getActiveBars = ctx.getActiveBars or function() return nil end
 
     -- ── HUD state ─────────────────────────────────────────────────────────
 
@@ -82,6 +85,11 @@ function M.new(ctx)
     local currentUiMode    = nil
     local currentStructSig = nil   -- structural signature of what's on screen
     local currentName      = nil   -- last name text rendered (for in-place patch)
+    -- Live references for patching each stacked bar's fill width per tick without
+    -- rebuilding the element. Captured at build time (props tables are held by
+    -- reference in the layout, same as the StanceName patch). One entry per active
+    -- bar: { props = fillProps, w, h, ratio }.
+    local barFillList      = {}
     local textureCache     = {}    -- [vfsPath] = TextureResource | false (load failed)
 
     -- Relative defaults — used only when the player hasn't explicitly placed
@@ -92,6 +100,13 @@ function M.new(ctx)
     -- Gold-on-black to match the rest of the mod's UI.
     local NAME_TEXT_COLOR   = util.color.rgb(0.92, 0.85, 0.55)
     local NAME_SHADOW_COLOR = util.color.rgb(0, 0, 0)
+    -- Stacked buff bars (resonance / smoker / muse): height as a fraction of the
+    -- bar width, a dim track for the empty portion, and a small vertical gap. Each
+    -- bar's FILL colour is supplied per-bar by getActiveBars (red/purple/light-blue
+    -- for resonance phases, orange for smoking, yellow for muse).
+    local BAR_HEIGHT_FRAC = 0.16
+    local BAR_GAP_PX      = 1
+    local BAR_TRACK_TINT  = util.color.rgb(0.28, 0.28, 0.30)
     local ICON_TINT         = util.color.rgb(1, 1, 1)
     -- Center children horizontally (cross axis) when the enum is available;
     -- if not, the key is simply absent and the engine defaults to Start.
@@ -279,7 +294,7 @@ function M.new(ctx)
     -- icons sit BESIDE the stance icon rather than overlaid inside it. With no
     -- prefixes the stance icon is added bare, exactly as before, so the common
     -- case is unchanged. The name row below is unaffected either way.
-    local function buildChildren(tex, iconPx, nameText, showName, prefixTexes)
+    local function buildChildren(tex, iconPx, nameText, showName, prefixTexes, bars)
         local children = {}
         if tex then
             local stanceIcon = {
@@ -355,10 +370,58 @@ function M.new(ctx)
                 },
             }
         end
+
+        -- Stacked buff bars under the stance name. Each is a textured fill bar: a
+        -- dim full-width track (the empty portion) with a bright fill that grows
+        -- from the left to bar.ratio, tinted bar.r/g/b. Resonance uses its own
+        -- textures (resonance / exhaustion); smoker and muse reuse the near-white
+        -- resonance texture tinted orange / yellow. Each fill's props table is
+        -- captured into barFillList so updateHud can patch its width per tick.
+        barFillList = {}
+        if bars then
+            for i = 1, #bars do
+                local bar = bars[i]
+                local btex = bar and bar.tex and textureFor(bar.tex)
+                if btex then
+                    local barW = math.max(24, iconPx or 48)
+                    local barH = math.max(5, math.floor(barW * BAR_HEIGHT_FRAC))
+                    local ratio = bar.ratio or 0
+                    if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+
+                    local trackProps = {
+                        resource = btex,
+                        size     = util.vector2(barW, barH),
+                        color    = BAR_TRACK_TINT,
+                        position = util.vector2(0, 0),
+                    }
+                    local fillProps = {
+                        resource = btex,
+                        size     = util.vector2(math.max(0, math.floor(barW * ratio)), barH),
+                        color    = util.color.rgb(bar.r or 1, bar.g or 1, bar.b or 1),
+                        position = util.vector2(0, 0),
+                    }
+                    barFillList[#barFillList + 1] = { props = fillProps, w = barW, h = barH, ratio = ratio }
+
+                    children[#children + 1] = {
+                        type = ui.TYPE.Widget,
+                        name = 'StanceBar' .. i,
+                        props = {
+                            size = util.vector2(barW, barH),
+                            -- small gap above each bar so stacked bars don't touch
+                            position = util.vector2(0, (i == 1) and 1 or BAR_GAP_PX),
+                        },
+                        content = ui.content({
+                            { type = ui.TYPE.Image, name = 'Track', props = trackProps },
+                            { type = ui.TYPE.Image, name = 'Fill',  props = fillProps  },
+                        }),
+                    }
+                end
+            end
+        end
         return children
     end
 
-    local function buildHud(tex, iconPx, nameText, showName, prefixTexes)
+    local function buildHud(tex, iconPx, nameText, showName, prefixTexes, bars)
         destroyHud()
 
         local props = {
@@ -379,7 +442,7 @@ function M.new(ctx)
             name    = 'StanceHudIndicator',
             props   = props,
             userData = { dragging = false, lastMousePos = nil },
-            content = ui.content(buildChildren(tex, iconPx, nameText, showName, prefixTexes)),
+            content = ui.content(buildChildren(tex, iconPx, nameText, showName, prefixTexes, bars)),
         }
 
         hudElement.layout.events = {
@@ -423,6 +486,18 @@ function M.new(ctx)
             if ptex then prefixTexes[#prefixTexes + 1] = ptex end
         end
 
+        -- Stacked buff bars (resonance / smoker / muse). Their PRESENCE, ORDER,
+        -- texture and colour are structural (folded into the signature as keys);
+        -- each fill's WIDTH is patched in place per tick (below).
+        local bars = getActiveBars(activeId)
+
+        local barSig = 'B0'
+        if bars and #bars > 0 then
+            local keys = {}
+            for i = 1, #bars do keys[i] = tostring(bars[i].key or bars[i].tex or i) end
+            barSig = 'B:' .. table.concat(keys, ',')
+        end
+
         -- Structural signature: anything here changing requires a rebuild. The
         -- name text is handled separately (patched in place) so name-only prefix
         -- changes don't churn the whole element. The prefix icon set IS structural
@@ -436,10 +511,11 @@ function M.new(ctx)
             showName and 'N1' or 'N0',
             tostring(iconPx),
             'P:' .. table.concat(prefixPaths, ','),
+            barSig,
         }, '|')
 
         if structSig ~= currentStructSig or not hudElement then
-            buildHud(tex, iconPx, nameText, showName, prefixTexes)
+            buildHud(tex, iconPx, nameText, showName, prefixTexes, bars)
             currentStructSig = structSig
             return
         end
@@ -452,6 +528,21 @@ function M.new(ctx)
                 local nameChild = content and content['StanceName']
                 if nameChild then nameChild.props.text = nameText end
                 currentName = nameText
+            end
+            -- Patch each stacked bar's fill width in place (same structure on
+            -- screen; only fills' widths change). barFillList[i] lines up with
+            -- bars[i] because the bar set is identical while structSig is stable.
+            if bars then
+                for i = 1, #barFillList do
+                    local bf = barFillList[i]
+                    local nb = bars[i]
+                    if bf and nb and nb.ratio ~= bf.ratio then
+                        local ratio = nb.ratio or 0
+                        if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+                        bf.props.size = util.vector2(math.max(0, math.floor(bf.w * ratio)), bf.h)
+                        bf.ratio = ratio
+                    end
+                end
             end
             hudElement.layout.props.position = hudPosition()
             hudElement:update()

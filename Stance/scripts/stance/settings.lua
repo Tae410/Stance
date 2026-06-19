@@ -232,6 +232,7 @@ I.Settings.registerGroup {
         { key = 'integrateTraps',          renderer = 'checkbox', name = 'SettingIntegrateTraps',          description = 'SettingIntegrateTrapsDescription',          default = true },
         { key = 'integrateOilFlask',       renderer = 'checkbox', name = 'SettingIntegrateOilFlask',       description = 'SettingIntegrateOilFlaskDescription',       default = true },
         { key = 'integrateSpellsword',     renderer = 'checkbox', name = 'SettingIntegrateSpellsword',     description = 'SettingIntegrateSpellswordDescription',     default = true },
+        { key = 'integrateHackleLoPipes',  renderer = 'checkbox', name = 'SettingIntegrateHackleLoPipes',  description = 'SettingIntegrateHackleLoPipesDescription',  default = true },
         { key = 'integrateTalkingTrains',  renderer = 'checkbox', name = 'SettingIntegrateTalkingTrains',  description = 'SettingIntegrateTalkingTrainsDescription',  default = true },
         { key = 'integrateDisenchanting',  renderer = 'checkbox', name = 'SettingIntegrateDisenchanting',  description = 'SettingIntegrateDisenchantingDescription',  default = true },
         { key = 'integrateCommercium',     renderer = 'checkbox', name = 'SettingIntegrateCommercium',     description = 'SettingIntegrateCommerciumDescription',     default = true },

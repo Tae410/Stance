@@ -74,6 +74,9 @@ function M.new(ctx)
     -- all other modifiers and clears the instant the buff expires.
     local currentSmokingWeaponBonus = ctx.currentSmokingWeaponBonus
         or function() return 0 end
+    -- Live smoke buff window { remaining, window } (seconds), or nil. Used for the
+    -- tooltip countdown line.
+    local getSmokingBuffInfo = ctx.getSmokingBuffInfo or function() return nil end
     -- Returns tooltip note lines for the name prefixes active on a stance
     -- (Sneaky / Fortified / imbue element). Empty when none / not provided.
     local getActivePrefixNotes  = ctx.getActivePrefixNotes or function() return {} end
@@ -233,6 +236,14 @@ function M.new(ctx)
     -- another system's modifier.
     local effectivenessModifiersRegistered = {}   -- modded SF skills only
     local effVanillaContrib = {}                   -- [skillId] = our applied points
+    -- Set on load/unregister. The engine PERSISTS a skill's `.modifier` across
+    -- save/load, but our Lua tracker (effVanillaContrib) resets to empty on load.
+    -- If we naively re-applied, setVanillaEffContrib would add the bonus on top of
+    -- the already-persisted modifier and DOUBLE it every load. On the first refresh
+    -- after load we instead reconcile: read the actual modifier and assume the
+    -- portion up to our desired bonus is already ours, so the re-apply is a no-op
+    -- when the bonus is present (no double) yet still applies if it was zeroed.
+    local effNeedsReconcile = false
 
     local VANILLA_EFF_SKILLS = {
         'longblade', 'shortblade', 'bluntweapon', 'axe', 'spear',
@@ -302,6 +313,25 @@ function M.new(ctx)
         if not skillRegistered then return end
 
         local targetSkill, targetBonus = currentEffectiveBonusSkill()
+
+        -- First refresh after a load: reconcile the tracker with the persisted
+        -- modifier so we don't double the bonus. The engine restores the active
+        -- stance's target-skill `.modifier` (with our bonus baked in); we assume
+        -- the present modifier up to our desired bonus is ours and set the tracker
+        -- to it, making the apply below a no-op when the bonus is already there
+        -- (prev == new) while still applying if the modifier was zeroed.
+        if effNeedsReconcile then
+            effNeedsReconcile = false
+            if targetSkill then
+                local stat = statAccess.getSkillStat(getSelf(), targetSkill)
+                if stat then
+                    local actualMod = 0
+                    pcall(function() actualMod = stat.modifier or 0 end)
+                    local present = math.min(targetBonus or 0, math.max(0, actualMod))
+                    effVanillaContrib[targetSkill] = present
+                end
+            end
+        end
 
         -- Apply the active stance's bonus to its target skill, and reset every
         -- other vanilla skill we manage back to 0 so swapping stances moves the
@@ -464,23 +494,23 @@ function M.new(ctx)
             end
             table.insert(lines, table.concat(statParts, '   '))
 
-            -- Sol combat-mod mastery (timed directional / weighty charged
-            -- attack), applied to the stance's own weapon skill. Shown on their
-            -- OWN lines (not crammed onto the stat line, where they could wrap
-            -- off-screen) and shown whenever the relevant Sol mod is DETECTED and
-            -- this stance has that affinity — even at +0 — so the distinctiveness
-            -- is legible from the start and visibly grows as the stance levels
-            -- (the bonus ramps from 0 at the start level to its ceiling at 100).
+            -- Sol combat-mod affinity (timed directional / weighty charged
+            -- attack). Stance no longer applies a passive weapon-skill bonus for
+            -- these (that was overpowered and always-on); the reward now comes
+            -- solely from the Sol mod's own buff, earned only on a perfectly-timed
+            -- directional attack (STDA) or an effectively-charged weighty attack
+            -- (SWCA). So these lines are INFORMATIONAL: they name the stance's
+            -- signature strike and remind the player the bonus fires on a clean
+            -- execution, not continuously. Shown whenever the relevant Sol mod is
+            -- detected and this stance has that affinity.
             if skillLabel ~= 'none' then
                 local timedSig = getStanceTimedSignature(stanceId)
                 if integrationPresent('soltimeddirattacks') and timedSig ~= '' then
-                    local timedBonus = math.floor((getStanceTimedBonus(stanceId) or 0) + 0.5)
-                    table.insert(lines, string.format('+%d %s  (Timed - %s)', timedBonus, skillLabel, timedSig))
+                    table.insert(lines, string.format('Timed %s strike  (buff on a clean time)', timedSig))
                 end
                 local weightySig = getStanceWeightySignature(stanceId)
                 if integrationPresent('solweightychargeattacks') and weightySig ~= '' then
-                    local weightyBonus = math.floor((getStanceWeightyBonus(stanceId) or 0) + 0.5)
-                    table.insert(lines, string.format('+%d %s  (Weighty - %s)', weightyBonus, skillLabel, weightySig))
+                    table.insert(lines, string.format('Weighty %s  (buff on a full charge)', weightySig))
                 end
             end
             table.insert(lines, xpLine)
@@ -495,6 +525,24 @@ function M.new(ctx)
                 local sig = config.mltSignature and config.mltSignature[stanceId]
                 if sig and sig.moves then
                     table.insert(lines, string.format('Move Like This - %s', sig.moves))
+                end
+            end
+
+            -- Blademeister Soul Resonance has no tooltip meter line for now: the
+            -- in-game bar/meter is removed pending a reliable HUD element. The
+            -- mechanic still runs (buffs/voice); only its visual readout is gone.
+
+            -- Smoking (Hackle-Lo Pipes): live +weapon-skill buff countdown. Only
+            -- while the gated bonus window is active; rebuilt each tick so it ticks
+            -- down live.
+            do
+                local sbuff = getSmokingBuffInfo()
+                if sbuff then
+                    local srem = math.max(0, math.floor((sbuff.remaining or 0) + 0.5))
+                    local smm, sss = math.floor(srem / 60), srem % 60
+                    local smag = math.floor((currentSmokingWeaponBonus() or 0) + 0.5)
+                    table.insert(lines, string.format('Smoking: +%d %s  (%d:%02d left)',
+                        smag, skillLabel, smm, sss))
                 end
             end
 
@@ -563,6 +611,14 @@ function M.new(ctx)
         end
 
         lastSkillSyncedDescription = tryModify('description', description, lastSkillSyncedDescription)
+        -- The SF skill's NAME morphs to the active stance (e.g. "Muse"), so the
+        -- tooltip header and skill-menu identity track the current stance. NOTE:
+        -- Skill Framework's own core level-up message ("Your <name> ... increased")
+        -- reads from this same field, so it will use the active stance's name. The
+        -- per-stance level-up message Stance shows itself ("<Stance> stance advances
+        -- to level N") remains distinct. (An earlier build froze this to "Stance"
+        -- to make the core message read "Stance", but that froze the tooltip header
+        -- too — the two are the same field, so we prioritise the dynamic tooltip.)
         lastSkillSyncedName        = tryModify('name', displayName, lastSkillSyncedName)
         lastSkillSyncedAttribute   = tryModify('attribute', attribute, lastSkillSyncedAttribute)
 
@@ -621,11 +677,12 @@ function M.new(ctx)
         lastSkillSyncedAttribute = nil
         lastSkillSyncedDescription = nil
         lastSkillSyncedShortName = nil
-        -- The engine zeroes skill modifiers on load. Drop our tracked vanilla
-        -- effectiveness contributions to 0 so the next refresh re-applies the
-        -- real bonus onto the freshly-zeroed modifier instead of believing it
-        -- is already present (prev == new) and skipping it.
+        -- The engine PERSISTS vanilla skill `.modifier` across load, but our
+        -- tracker resets here. Drop the tracker to 0 and flag a reconcile so the
+        -- next refresh syncs to whatever is actually on the skill instead of
+        -- blindly re-adding the (already-persisted) bonus and doubling it.
         clearVanillaEffContribs()
+        effNeedsReconcile = true
     end
 
     return {

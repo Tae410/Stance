@@ -133,13 +133,15 @@ local function getSelf()             return C and C.getSelf()                   
 -- the two Forager perk sets applies its EFFECTS (mirrors the displayed ladder).
 local function getForagerSubtype()   return C and C.getForagerSubtype and C.getForagerSubtype() or nil end
 
--- Full gate: every condition must pass for a perk to be active.
+-- Full gate: every condition must pass for a perk to be active. Perks unlock at
+-- the stance's OWN level (Commoner perks behind the Commoner level, and so on for
+-- every stance) — distinct from BONUS increases, which are gated on the core level.
 local function perkActive(stanceId, threshold)
     if not readSetting('', 'enabled', true)          then return false end
     if not readSetting('Perks', 'enableAllPerks', true) then return false end
     if getActiveStance() ~= stanceId                 then return false end
     if not perksEnabled(stanceId)                    then return false end
-    return getCoreLevel() >= threshold
+    return getStanceLevel(stanceId) >= threshold
 end
 
 -- ─── Persistent storage ───────────────────────────────────────────────────
@@ -203,7 +205,10 @@ local function computeDesiredAttrContribs()
 
     local sid = getActiveStance()
     if not sid then return d end
-    local cl = getCoreLevel()
+    -- Perks unlock on the active stance's OWN level (each block below is guarded by
+    -- sid == '<stance>', so this is exactly that stance's level). Bonuses gate on
+    -- core level elsewhere; perks gate on the individual stance level.
+    local cl = getStanceLevel(sid)
 
     -- ── Arcanist ──────────────────────────────────────────────────────────
     -- Willpower reduces spell cost in Morrowind's cast formula.
@@ -225,17 +230,10 @@ local function computeDesiredAttrContribs()
     end
 
     -- ── Blademeister ──────────────────────────────────────────────────────
-    -- Agility governs Sneak and melee precision.
-    -- Strength accumulates with each perk to represent the growing soul-pact damage.
-    if sid == 'blademeister' and perksEnabled('blademeister') then
-        if cl >= 25  then d.agility  = d.agility  + 5  end  -- Soul Perception (attr; SF handles Mysticism)
-        if cl >= 50  then d.strength = d.strength + 5  end  -- Soul Wavelength (+15% damage proxy)
-        if cl >= 75  then d.strength = d.strength + 5  end  -- Witch Hunter (+30% power attack proxy; total +10)
-        if cl >= 100 then                                     -- Soul Resonance
-            d.agility = d.agility + 10   -- speed/armor-ignore proxy via Agility (total +15)
-            d.strength= d.strength + 5   -- damage increase proxy (total +15 Str)
-        end
-    end
+    -- Blademeister's perks no longer grant passive stats. They now centre on the
+    -- Soul Resonance meter (build rate / resonant duration / exhaustion cooldown /
+    -- kill-cascade) and are implemented in player/blademeister.lua. Nothing to add
+    -- here.
 
     -- ── Huntsman ──────────────────────────────────────────────────────────
     -- Endurance: Steady Aim reduces archery fatigue drain.
@@ -444,8 +442,8 @@ local function computeDesiredSkillContribs()
     local d = {}
     for _, s in ipairs(SKILL_NAMES) do d[s] = 0 end
 
-    -- Blademeister — Soul Perception (25): +5 Mysticism
-    if perkActive('blademeister', 25) then d.mysticism = d.mysticism + 5 end
+    -- (Blademeister's old Soul Perception +5 Mysticism is gone; its perks now
+    -- centre on the Soul Resonance meter — see player/blademeister.lua.)
     -- Thief — Cutpurse (50): +5 Sneak
     if perkActive('thief', 50) then d.sneak = d.sneak + 5 end
     -- Locksmith — Light Fingers (25): +5 Security
@@ -527,7 +525,7 @@ function Perks.onHit(attack)
 
     local sid = getActiveStance()
     if not sid then return end
-    local cl  = getCoreLevel()
+    local cl  = getStanceLevel(sid)   -- perks gate on the active stance's own level
     local tgt = attack.target
 
     -- ── Reforger ──────────────────────────────────────────────────────────
@@ -545,22 +543,10 @@ function Perks.onHit(attack)
     end
 
     -- ── Blademeister ──────────────────────────────────────────────────────
-    -- Soul Wavelength (50): 10% chance per hit to disrupt the target's
-    -- concentration (DamageFatigue — the resonance interrupts their form).
-    -- Witch Hunter (75): 15% chance of a resonant strike (DamageHealth).
-    -- Soul Resonance (100): 5% chance of a brief Paralyze (armor-bypass via
-    -- the blade finding a gap the soul-pact reveals).
-    if sid == 'blademeister' and perksEnabled('blademeister') then
-        if cl >= 50 and roll(0.10) then
-            sendEffect(tgt, EFF.DamageFatigue, 10, 0)
-        end
-        if cl >= 75 and roll(0.15) then
-            sendEffect(tgt, EFF.DamageHealth, 5, 0)
-        end
-        if cl >= 100 and roll(0.05) then
-            sendEffect(tgt, EFF.Paralyze, 1, 0.5)
-        end
-    end
+    -- Blademeister's perks now centre on the Soul Resonance meter (build rate /
+    -- resonant duration / exhaustion cooldown / kill-cascade), implemented in
+    -- player/blademeister.lua. No per-hit perk effects here — the hit itself feeds
+    -- the meter via blademeister.onHit() in init.lua's onPlayerDealtHit.
 
     -- ── Huntsman ──────────────────────────────────────────────────────────
     -- Pinning Shot (50): ranged hits apply Burden (slow) for 3 seconds.
@@ -716,7 +702,7 @@ function Perks.onParry()
     if sid ~= 'fortifier' then return end
     if not perksEnabled('fortifier') then return end
 
-    local cl  = getCoreLevel()
+    local cl  = getStanceLevel(sid)   -- perks gate on the active stance's own level
     local now = core.getSimulationTime()
 
     -- Bulwark (100): once per 30 seconds, partially absorb an incoming blow.
@@ -770,7 +756,7 @@ local function broadcastIntegrationData(now)
 
     local sid = getActiveStance()
     if not sid then return end
-    local cl = getCoreLevel()
+    local cl = getStanceLevel(sid)   -- perks gate on the active stance's own level
 
     -- ── Twirler → Throwing! ───────────────────────────────────────────────
     if sid == 'twirler' and perksEnabled('twirler') and intPresent('throwing') then

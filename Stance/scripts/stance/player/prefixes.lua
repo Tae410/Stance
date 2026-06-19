@@ -38,6 +38,7 @@ function M.new(ctx)
     local integrationEnabled = ctx.integrationEnabled
     local getActiveStance    = ctx.getActiveStance
     local getStanceLevel     = ctx.getStanceLevel or function() return config.startLevel or 5 end
+    local getCoreSkillLevel  = ctx.getCoreSkillLevel or function() return config.startLevel or 5 end
 
     -- ─── Spellsword imbue prefix (purely cosmetic) ────────────────────────────
     -- When the Spellsword mod has an active weapon imbuement, formatStanceName()
@@ -52,14 +53,16 @@ function M.new(ctx)
 
     -- Stances with no imbuable weapon, so they never take a prefix: a readied spell
     -- (arcanist), the empty/sheathed fallback (commoner), a lockpick/probe
-    -- (locksmith), and a repair hammer (reforger) — none of which Spellsword glows
-    -- on or imbues. Every other stance wields a weapon (or fists) Spellsword treats
-    -- as imbuable.
+    -- (locksmith), a repair hammer (reforger), and the Muse — a performance stance
+    -- whose instrument is not a Spellsword-imbuable weapon, so it is excluded from
+    -- the Spellsword integration's prefix entirely. Every other stance wields a
+    -- weapon (or fists) Spellsword treats as imbuable.
     local NON_IMBUABLE_STANCES = {
         arcanist  = true,
         commoner  = true,
         locksmith = true,
         reforger  = true,
+        muse      = true,
     }
 
     -- ─── Fortified prefix (shield + one-handed melee) ─────────────────────────
@@ -162,6 +165,13 @@ function M.new(ctx)
     local smokingActive    = false   -- actively smoking a leaf (drives +10 bonus)
     local smokeRemaining   = 0       -- seconds left on the active smoke buff (for the tooltip timer)
     local smokeSpeedContrib = 0      -- our own Speed-modifier delta (offsets the drain)
+    -- Stance-managed smoke-BONUS window. The +weapon bonus no longer lasts the
+    -- whole potion: it lasts a halved, core-level-gated window measured from when
+    -- smoking began (see config.smoker / gatedSmokeWindow / refreshSmoking). The
+    -- pipe's Speed-drain cancellation is unaffected and still lasts the full potion.
+    local smokeBonusStart  = nil     -- core.getSimulationTime() when smoking began (nil = not smoking)
+    local smokeBonusWindow = 0       -- gated window length captured at smoke start (seconds)
+    local smokeBonusLive   = false   -- true while within the window AND still smoking
 
     local function formatStanceName(stanceId)
         local stance = getStanceConfig(stanceId)
@@ -574,63 +584,132 @@ function M.new(ctx)
         smokeSpeedContrib = 0
     end
 
+    -- Longest smoke-BONUS window the player's CORE Stance level currently
+    -- permits: gateBaseSeconds at gateAtLevel, +gateAddSeconds every gatePerLevels
+    -- core levels. (Independent of the potion's own duration; see refreshSmoking.)
+    local function gatedSmokeWindow()
+        local s = config.smoker or {}
+        local baseS = tonumber(s.gateBaseSeconds) or 20
+        local atLvl = tonumber(s.gateAtLevel)     or 5
+        local perL  = tonumber(s.gatePerLevels)   or 10
+        local addS  = tonumber(s.gateAddSeconds)  or 10
+        if perL < 1 then perL = 1 end
+        local lvl = getCoreSkillLevel()
+        local steps = math.floor((lvl - atLvl) / perL)
+        if steps < 0 then steps = 0 end
+        local window = baseS + steps * addS
+        if window < 0 then window = 0 end
+        return window
+    end
+
     -- Refresh the cached Smoking state once per poll tick.
     --   pipeEquipped  — a Hackle-Lo pipe is in the off-hand (drives the prefix).
-    --   smokingActive — pipe equipped AND a smoke potion active AND the active
-    --                   stance can smoke (drives the +10 weapon-skill bonus).
-    -- Separately, the pipe's Speed drain is neutralised for as long as the smoke
-    -- effect itself lasts — independent of pipe-equipped state and stance, because
-    -- the drain is a potion effect that persists for its full duration once a leaf
-    -- is smoked (so putting the pipe away does not re-expose it). No lingering
-    -- timer governs the prefix/bonus: the moment the pipe leaves the off-hand both
-    -- of those clear on the next tick. Logs only on transition.
+    --   smokingActive — a smoke potion is currently in effect (drives the prefix
+    --                   timer and the Speed-drain cancellation, which both last
+    --                   the FULL potion duration).
+    --   smokeBonusLive — the +weapon-skill bonus, which now lasts only a HALVED,
+    --                   core-level-gated window measured from when smoking began.
+    -- The Speed drain is neutralised for as long as the smoke effect itself lasts.
+    -- Logs only on transition.
     local function refreshSmoking()
         local prevPipe  = pipeEquipped
         local prevSmoke = smokingActive
 
+        -- Respect the Hackle-Lo Pipes integration toggle (Integrations settings).
+        -- When disabled, the smoking prefix and its weapon-skill bonus are fully
+        -- off: clear all cached state and peel any Speed offset we hold.
+        if not integrationEnabled('hacklelopipes') then
+            pipeEquipped     = false
+            smokingActive    = false
+            smokeBonusLive   = false
+            smokeBonusStart  = nil
+            smokeBonusWindow = 0
+            smokeRemaining   = 0
+            applySmokeSpeedOffset(0)
+            if prevPipe or prevSmoke then
+                debugLog('Smoking -> integration disabled; prefix/bonus cleared.',
+                    'debugDetectionMessages')
+            end
+            return
+        end
+
         pipeEquipped = isHackleLoPipeEquipped()
 
         local smokeActive, speedDrain, remaining = scanActiveSmoke()
-        -- The buff now lasts exactly as long as the smoke effect itself: it is
-        -- driven SOLELY by an active hackle-lo smoke potion, independent of
-        -- whether the pipe is still equipped and of which stance is active. So
-        -- the +10 persists for the full smoke duration even after the pipe is
-        -- put away, and applies to whatever stance you wield (all stances).
         smokingActive = smokeActive
 
-        -- Remaining smoke time, surfaced as the tooltip buff timer.
-        smokeRemaining = smokingActive and (remaining or 0) or 0
+        local now = 0
+        pcall(function() now = core.getSimulationTime() end)
 
-        -- Cancel the pipe's Speed drain (positive offset == drain magnitude).
+        if smokingActive then
+            -- On the smoking-begin transition, open a fresh bonus window: the
+            -- lesser of the core-level gate and HALF the potion's remaining time
+            -- at this moment (so both the gate and the "halve" rule bind).
+            if not prevSmoke or smokeBonusStart == nil then
+                smokeBonusStart = now
+                local scale = tonumber(config.smoker and config.smoker.durationScale) or 0.5
+                local halvedPotion = (tonumber(remaining) or 0) * scale
+                local gate = gatedSmokeWindow()
+                smokeBonusWindow = math.min(gate, halvedPotion)
+                if smokeBonusWindow < 0 then smokeBonusWindow = 0 end
+            end
+            local elapsed = now - (smokeBonusStart or now)
+            local windowLeft = (smokeBonusWindow or 0) - elapsed
+            if windowLeft < 0 then windowLeft = 0 end
+            smokeBonusLive = windowLeft > 0
+            -- Tooltip timer shows the GATED bonus window remaining, capped by the
+            -- potion's own remaining time so it never overstates either limit.
+            smokeRemaining = math.min(windowLeft, tonumber(remaining) or 0)
+        else
+            smokeBonusStart  = nil
+            smokeBonusWindow = 0
+            smokeBonusLive   = false
+            smokeRemaining   = 0
+        end
+
+        -- Cancel the pipe's Speed drain (positive offset == drain magnitude) for
+        -- the full potion duration, independent of the bonus window above.
         applySmokeSpeedOffset(speedDrain)
 
         if pipeEquipped ~= prevPipe or smokingActive ~= prevSmoke then
-            debugLog(string.format('Smoking -> pipe=%s active=%s (speedOffset=%d)',
-                tostring(pipeEquipped), tostring(smokingActive), speedDrain),
+            debugLog(string.format('Smoking -> pipe=%s active=%s bonusWindow=%.0fs (speedOffset=%d)',
+                tostring(pipeEquipped), tostring(smokingActive), smokeBonusWindow or 0, speedDrain),
                 'debugDetectionMessages')
         end
     end
 
-    -- Additive weapon-skill bonus granted while ACTIVELY smoking. Fixed at +10;
-    -- 0 unless smokingActive (pipe equipped, a leaf was smoked, and the active
-    -- stance is allowed to smoke). Consumed by refreshEffectivenessModifiers in
-    -- skill_framework.lua, which folds it into the active stance's target-skill
-    -- contribution through the same native delta-modifier path used for the other
-    -- effectiveness bonuses.
+    -- Additive weapon-skill bonus granted while the smoke-bonus WINDOW is live
+    -- (config.smoker.weaponBonus, default 10). 0 once the halved, core-gated
+    -- window elapses even if the potion itself lingers. Consumed by
+    -- refreshEffectivenessModifiers in skill_framework.lua.
     local function currentSmokingWeaponBonus()
-        return smokingActive and 10 or 0
+        if not smokeBonusLive then return 0 end
+        return tonumber(config.smoker and config.smoker.weaponBonus) or 10
     end
 
-    -- Public read of the cached Smoking flag (the bonus/effects state — pipe held
-    -- AND actively smoking), for UI consumers.
+    -- Public read of the cached Smoking flag for UI consumers: true while the
+    -- bonus window is live (pipe smoked, within the gated window).
     local function isSmokingActive()
-        return smokingActive == true
+        return smokeBonusLive == true
     end
 
     -- Seconds remaining on the active smoke buff (0 when not actively smoking).
     -- Read live from the engine each tick, so consumers get a real-time countdown.
     local function currentSmokeRemaining()
         return smokingActive and (smokeRemaining or 0) or 0
+    end
+
+    -- Live smoke buff window for the tooltip timer and the HUD bar. Returns nil
+    -- unless the gated bonus window is active; otherwise { remaining, window }
+    -- (seconds) so a consumer can show a countdown or a remaining/window bar.
+    local function getSmokingBuffInfo()
+        if not smokeBonusLive then return nil end
+        local window    = tonumber(smokeBonusWindow) or 0
+        local remaining = tonumber(smokeRemaining) or 0
+        if window <= 0 then return nil end
+        if remaining < 0 then remaining = 0 end
+        if remaining > window then remaining = window end
+        return { remaining = remaining, window = window }
     end
 
 
@@ -714,13 +793,13 @@ function M.new(ctx)
                 math.floor(currentBrawlerGauntletSpeedDebuff() * 100 + 0.5))
         end
         -- Smoking: shown while a Hackle-Lo pipe is equipped (the prefix only needs
-        -- the pipe in hand). The +10 bonus applies only while actively smoking a
-        -- leaf (smokingActive); merely holding the pipe prompts the player to smoke.
-        -- Smoking: the buff runs for the smoke's full duration (see the timer),
-        -- on every stance, whether or not the pipe is still in hand. The "ready"
-        -- hint shows when a pipe is held but no smoke is active yet.
+        -- the pipe in hand). The weapon-skill bonus applies only while the HALVED,
+        -- core-gated bonus window is live (smokeBonusLive), which is shorter than
+        -- the potion's own duration. Merely holding the pipe prompts the player to
+        -- smoke; the timer below counts down the gated bonus window.
         if smokingActive or pipeEquipped then
-            if smokingActive then
+            local bonusPts = tonumber(config.smoker and config.smoker.weaponBonus) or 10
+            if smokeBonusLive then
                 local rem = smokeRemaining or 0
                 local timer = ''
                 if rem > 0 then
@@ -728,11 +807,15 @@ function M.new(ctx)
                         math.floor(rem / 60), math.floor(rem % 60))
                 end
                 notes[#notes + 1] = string.format(
-                    "Smoking: hackle-lo smoke sharpens your focus — +10 to this stance's weapon skill while the buff lasts%s.",
-                    timer)
-            else
+                    "Smoking: hackle-lo smoke sharpens your focus — +%d to this stance's weapon skill%s.",
+                    bonusPts, timer)
+            elseif smokingActive then
                 notes[#notes + 1] =
-                    "Smoking: a Hackle-Lo pipe is at the ready. Smoke a hackle-lo leaf with it to gain +10 to this stance's weapon skill."
+                    "Smoking: the focus from your smoke has faded. Smoke again to renew the weapon-skill bonus."
+            else
+                notes[#notes + 1] = string.format(
+                    "Smoking: a Hackle-Lo pipe is at the ready. Smoke a hackle-lo leaf to gain +%d to this stance's weapon skill.",
+                    bonusPts)
             end
         end
         return notes
@@ -836,6 +919,7 @@ function M.new(ctx)
         clearSmokingSpeedOffset    = clearSmokingSpeedOffset,
         currentSmokingWeaponBonus  = currentSmokingWeaponBonus,
         currentSmokeRemaining      = currentSmokeRemaining,
+        getSmokingBuffInfo         = getSmokingBuffInfo,
         isSmokingActive            = isSmokingActive,
         -- Brawler gauntlet tradeoff (hand-armor weight class while unarmed):
         refreshBrawlerGauntlet            = refreshBrawlerGauntlet,

@@ -170,9 +170,23 @@ function M.new(ctx)
         if not integrationEnabled('oblivionlockpicking') then return end
         if not readSetting('Progression', 'xpOnLockpick', true) then return end
 
-        grantStanceXp(config.xp.lockpickSuccess or 2.0, 'lockpick', 'locksmith')
+        -- Base (floor) reward for any sprung lock/disarmed trap, plus a bonus
+        -- proportional to the object's reported difficulty. When OSL does not
+        -- report a difficulty, the bonus is simply 0 and the flat floor applies.
+        local base = config.xp.lockpickSuccess or 2.0
+        local bonus = 0
+        local difficulty = (type(payload) == 'table') and tonumber(payload.difficulty) or nil
+        if difficulty and difficulty > 0 then
+            local per = tonumber(config.xp.lockpickPerDifficulty) or 0.10
+            local cap = tonumber(config.xp.lockpickMaxBonus) or 6.0
+            bonus = difficulty * per
+            if bonus > cap then bonus = cap end
+        end
+
+        grantStanceXp(base + bonus, 'lockpick', 'locksmith')
         local what = (type(payload) == 'table' and payload.probe) and 'trap disarm' or 'lock pick'
-        debugLog('Locksmith credited for successful ' .. what .. '.', 'debugPerkMessages')
+        debugLog(string.format('Locksmith credited for successful %s (difficulty %s → +%.2f bonus).',
+            what, tostring(difficulty or 'n/a'), bonus), 'debugPerkMessages')
     end
 
     -- Deployable-hazard integrations (Traps → Thief, Oil Flask → Apothecary).

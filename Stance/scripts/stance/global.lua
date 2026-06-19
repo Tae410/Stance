@@ -152,8 +152,20 @@ local function onOSLLockpickSuccess(payload)
     local player = getPlayer()
     if not player then return end
     pcall(function()
+        -- Forward the probe flag and, if OSL reports the lock/trap strength under
+        -- any of the common field names, a numeric difficulty so Locksmith XP can
+        -- scale with it. Degrades gracefully to nil (flat XP) when none is present.
+        local difficulty = nil
+        if type(payload) == 'table' then
+            difficulty = tonumber(payload.difficulty)
+                or tonumber(payload.lockLevel)
+                or tonumber(payload.lockStrength)
+                or tonumber(payload.level)
+                or tonumber(payload.trapLevel)
+        end
         player:sendEvent('Stance_LockpickSuccess', {
             probe = payload and payload.probe or false,
+            difficulty = difficulty,
         })
     end)
 end

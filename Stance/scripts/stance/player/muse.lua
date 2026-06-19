@@ -102,6 +102,11 @@ function M.new(ctx)
     local stanceEnabled      = ctx.stanceEnabled
     local grantStanceXp      = ctx.grantStanceXp
     local getStanceLevel     = ctx.getStanceLevel
+    -- Level fed to the Muse buff magnitude: the player's BARDCRAFT skill (threaded
+    -- from init.lua as getBonusLevel('muse')), so a better bard plays stronger
+    -- inspiration. Falls back to Muse's stance level if not provided.
+    local getBonusLevel      = ctx.getBonusLevel or ctx.getStanceLevel
+    local getCoreSkillLevel  = ctx.getCoreSkillLevel  or function() return 0 end
     local resolveStanceSkill = ctx.resolveStanceSkill
     local getActiveStance    = ctx.getActiveStance
     local storage            = ctx.storage
@@ -220,12 +225,51 @@ function M.new(ctx)
         return n
     end
 
-    -- Buff magnitude (skill points), scaled by Muse level.
+    -- Muse perks unlock on the CORE Stance level (like every other ladder).
+    local function musePerkUnlocked(perkLevel)
+        return getCoreSkillLevel() >= perkLevel
+    end
+
+    -- The longest inspiration window the Muse's own level currently permits:
+    -- gateBaseSeconds at gateAtLevel, +gateAddSeconds every gatePerLevels Muse
+    -- levels. The 'Lingering Chord' perk (lv 75) extends every window by 25%.
+    local function gatedBuffWindow()
+        local baseS = tonumber(museCfg.gateBaseSeconds) or 10
+        local atLvl = tonumber(museCfg.gateAtLevel)     or 5
+        local perL  = tonumber(museCfg.gatePerLevels)   or 10
+        local addS  = tonumber(museCfg.gateAddSeconds)  or 10
+        if perL < 1 then perL = 1 end
+        local lvl = getStanceLevel('muse')
+        local steps = math.floor((lvl - atLvl) / perL)
+        if steps < 0 then steps = 0 end
+        local window = baseS + steps * addS
+        if musePerkUnlocked(75) then window = window * 1.25 end  -- Lingering Chord
+        if window < 0 then window = 0 end
+        return window
+    end
+
+    -- Turn a raw note-ledger buffer (seconds) into the final buff duration:
+    -- halved by buffDurationScale, then capped by the level gate. The
+    -- 'Composer's Voice' capstone (lv 100) lifts the cap ENTIRELY, but only for a
+    -- song of the player's OWN composition (isComposed) — preset songs stay gated.
+    local function finalBuffDuration(rawSeconds, isComposed)
+        local scale = tonumber(museCfg.buffDurationScale) or 0.5
+        local dur = math.max(0, rawSeconds) * scale
+        local bypassGate = musePerkUnlocked(100) and isComposed == true
+        if not bypassGate then
+            local cap = gatedBuffWindow()
+            if dur > cap then dur = cap end
+        end
+        if dur < 0 then dur = 0 end
+        return dur
+    end
+
+    -- Buff magnitude (skill points), scaled by the player's BARDCRAFT skill.
     local function buffMagnitude()
         local b = tonumber(museCfg.buffMagnitudeBase) or 5
         local per = tonumber(museCfg.buffMagnitudePerLevel) or 0.1
         local cap = tonumber(museCfg.buffMagnitudeMax) or 20
-        local lvl = getStanceLevel('muse')
+        local lvl = getBonusLevel('muse')
         local mag = math.floor(b + per * lvl + 0.5)
         if mag > cap then mag = cap end
         if mag < 1 then mag = 1 end
@@ -275,13 +319,17 @@ function M.new(ctx)
 
     -- ─── Buff lifecycle ───────────────────────────────────────────────────
 
-    local function applyBuff(stanceId, seconds, songTitle)
+    local function applyBuff(stanceId, seconds, songTitle, magScale)
         if not stanceId or seconds <= 0 then return false end
         local skillId = resolveStanceSkill(stanceId)
+        local scale = tonumber(magScale) or 1
+        local mag = math.floor(buffMagnitude() * scale + 0.5)
+        if mag < 1 then mag = 1 end
         local st = getState()
         st.activeBuffs[stanceId] = {
             remaining = seconds,
-            magnitude = buffMagnitude(),
+            duration  = seconds,   -- total window length, for the HUD bar ratio
+            magnitude = mag,
             songTitle = songTitle,
             skillId   = skillId,
         }
@@ -309,13 +357,14 @@ function M.new(ctx)
 
     -- ─── Performance event handling ───────────────────────────────────────
 
-    local function beginPerformance(songId, songTitle, perfType)
+    local function beginPerformance(songId, songTitle, perfType, isComposed)
         if not museEnabled() then return end
         if not isIdleType(perfType) then return end           -- only idle (Practice) play
         perf = {
             songId    = songId,
             songTitle = songTitle or 'a song',
             stance    = associateStance(songId, songTitle),
+            isComposed = isComposed == true,   -- player-authored (Bardcraft editor) vs preset
             accum     = 0,
             loop      = 0,
             lastBar   = -1,
@@ -336,8 +385,11 @@ function M.new(ctx)
 
     local function handleNote(success)
         if not perf then return end
-        -- Fatigue is drained for every note actually played.
-        drainFatigue(success and (museCfg.successFatigue or 2) or (museCfg.failFatigue or 4))
+        -- Fatigue is drained for every note actually played. The 'Easy Breath'
+        -- perk (lv 25) cuts that drain by a third.
+        local fat = success and (museCfg.successFatigue or 2) or (museCfg.failFatigue or 4)
+        if musePerkUnlocked(25) then fat = fat * (2 / 3) end
+        drainFatigue(fat)
         -- Only the first `allowed` loops contribute to the buff timer.
         if perf.loop >= perf.allowed then return end
         perf.notes = perf.notes + 1
@@ -368,16 +420,33 @@ function M.new(ctx)
             grantStanceXp(config.xp.museSongComplete or 3.0, 'song', 'muse')
         end
 
-        local bufferTime = math.max(0, p.accum)
+        -- Raw note-ledger time, then halved and capped by the Muse level gate
+        -- (see finalBuffDuration). 'Composer's Voice' (lv 100) lifts the cap for
+        -- the player's own compositions. A long, clean performance can otherwise
+        -- only ever buy as much inspiration time as the Muse's own mastery permits.
+        local bufferTime = finalBuffDuration(p.accum, p.isComposed)
         local buffed = false
         if p.stance and bufferTime > 0 then
             if applyBuff(p.stance, bufferTime, p.songTitle) then
                 buffed = true
                 grantStanceXp(config.xp.museBuffAdminister or 2.0, 'buff', 'muse')
+
+                -- 'Shared Refrain' (lv 50): also inspire a kindred stance at half
+                -- magnitude (same duration). No-op when the buffed stance has no
+                -- kin mapped or the perk is not yet unlocked.
+                if musePerkUnlocked(50) then
+                    local kin = (museCfg.kindredStance or {})[p.stance]
+                    if kin and kin ~= p.stance then
+                        applyBuff(kin, bufferTime, p.songTitle, 0.5)
+                        debugLog(string.format('Muse Shared Refrain: kindred %s buffed at half for %.0fs',
+                            tostring(kin), bufferTime), 'debugPerkMessages')
+                    end
+                end
+
                 reapplyAllBuffs()
-                debugLog(string.format('Muse: "%s" → +%d %s inspiration for %.0fs (%d/%d notes)',
+                debugLog(string.format('Muse: "%s" → +%d %s inspiration for %.0fs (%d/%d notes)%s',
                     p.songTitle, buffMagnitude(), tostring(p.stance), bufferTime,
-                    p.successes, p.notes), 'debugPerkMessages')
+                    p.successes, p.notes, p.isComposed and ' [composed]' or ''), 'debugPerkMessages')
             end
         end
 
@@ -412,7 +481,11 @@ function M.new(ctx)
         if type(e) ~= 'table' then return end
         if e.type == 'PerformStart' then
             local song = e.song
-            beginPerformance(song and song.id, song and song.title, e.perfType)
+            -- Bardcraft tags preset (MIDI) songs with song.isPreset = true; songs
+            -- authored in the editor (stored under songs/custom) do not carry it.
+            -- So a player composition is simply "not a preset".
+            local isComposed = song and (song.isPreset ~= true) or false
+            beginPerformance(song and song.id, song and song.title, e.perfType, isComposed)
         elseif e.type == 'NewBar' then
             noteBar(e.bar)
         elseif e.type == 'PerformStop' then

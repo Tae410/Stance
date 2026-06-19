@@ -127,6 +127,7 @@ local lastAnnouncedCoreLevel = nil
 -- natural definition site below.
 local activeStanceId       -- assigned in "Active stance tracking" section
 local getCoreSkillLevel    -- assigned in "Core Stance skill access" section
+local notify               -- assigned from hudModule below (forward-declared for xp ctx)
 local getStanceLevel       -- assigned in "Per-stance state" section
 local integrationPresent   -- assigned in "Integration detection" section
 local stanceEnabled        -- assigned in stance-setting helpers section
@@ -220,6 +221,32 @@ local function saveStanceState()
     stanceStateSection:set(STANCE_STATE_KEY, stanceStateCache)
 end
 
+-- ── Core rest-gate bank ───────────────────────────────────────────────────
+-- Persisted banked core XP + pending flag for rest-gated core leveling. Lives in
+-- the same player storage section as the stance levels (so it survives save/load
+-- automatically) under its own key, kept separate from the per-stance table so
+-- nothing that iterates stance entries ever sees it.
+local STANCE_CORE_BANK_KEY = 'coreBank'
+local coreBankCache = nil
+
+local function getCoreBank()
+    if coreBankCache then return coreBankCache end
+    local stored = stanceStateSection:get(STANCE_CORE_BANK_KEY)
+    local result = { banked = 0, pending = false }
+    if type(stored) == 'table' then
+        result.banked  = tonumber(stored.banked) or 0
+        result.pending = stored.pending == true
+    end
+    coreBankCache = result
+    return result
+end
+
+local function saveCoreBank(t)
+    if type(t) == 'table' then coreBankCache = t end
+    if not coreBankCache then return end
+    stanceStateSection:set(STANCE_CORE_BANK_KEY, coreBankCache)
+end
+
 -- getStanceLevel forward-declared above (needed by ensurePerksInit closure).
 getStanceLevel = function(stanceId)
     local entry = getStanceState()[stanceId]
@@ -233,23 +260,60 @@ local function getStanceXp(stanceId)
     return tonumber(entry.xp) or 0
 end
 
--- Effectiveness skill bonus driven by a stance's OWN level. Ramps linearly
--- from leveling.effectivenessMinBonus at startLevel to
--- leveling.effectivenessMaxBonus at maxLevel. This bonus is applied as an
--- additive Skill Framework dynamic modifier on the skill tied to the stance's
--- weapon type or modded integration (see STANCE_SKILL_TARGET and
--- refreshEffectivenessModifiers). Surfaced in the tooltip and exposed on the
--- script interface so source-mod integrations or the player can read it.
+-- ─── Bonus level source ───────────────────────────────────────────────────
+-- Stance BONUSES (effectiveness/skill bonus, Sol timed & weighty, Move Like This,
+-- Brawler unarmored/gauntlet) scale on the shared CORE Stance level, so a stance's
+-- bonuses grow with the player's overall mastery rather than that one stance's
+-- level. Muse is the exception: its bonuses scale on the player's Bardcraft skill
+-- (a better bard plays stronger inspiration). Perks, by contrast, unlock on the
+-- individual stance level — see perks.lua. Block is excluded entirely (it already
+-- scales with the Block skill).
+local function bardcraftSkillLevel()
+    local lvl = 0
+    pcall(function()
+        local t = types.NPC and types.NPC.stats and types.NPC.stats.skills
+        local fn = t and t.bardcraft
+        if fn then local s = fn(self); lvl = (s and (s.base or s.modified)) or 0 end
+    end)
+    if (tonumber(lvl) or 0) <= 0 and I.SkillFramework and I.SkillFramework.getSkillStat then
+        pcall(function()
+            local s = I.SkillFramework.getSkillStat('bardcraft')
+            lvl = (s and (s.base or s.modified)) or lvl
+        end)
+    end
+    return tonumber(lvl) or 0
+end
+
+-- Level fed to the bonus formulas: core level for every stance except Muse, which
+-- uses Bardcraft. Called at runtime, so the forward-declared getCoreSkillLevel is
+-- assigned by then.
+local function bonusLevelFor(stanceId)
+    if stanceId == 'muse' then return bardcraftSkillLevel() end
+    return getCoreSkillLevel()
+end
+
+-- Effectiveness skill bonus driven by the CORE Stance level (Muse: Bardcraft).
+-- Stepped, purely additive: effectivenessMinBonus at startLevel, +effectivenessStepBonus
+-- every effectivenessStepLevels levels, hard-capped at effectivenessMaxBonus. The
+-- value only changes at a level threshold (never mid-level). Applied as an additive
+-- modifier on the skill tied to the stance (see refreshEffectivenessModifiers).
 local function effectivenessSkillBonus(stanceId)
-    local lvl  = getStanceLevel(stanceId)
+    local lvl  = bonusLevelFor(stanceId)
     local lo   = config.startLevel or 5
-    local hi   = config.maxLevel   or 100
-    local minB = tonumber(config.leveling and config.leveling.effectivenessMinBonus) or 2
-    local maxB = tonumber(config.leveling and config.leveling.effectivenessMaxBonus) or 20
-    if hi <= lo then return minB end
-    local t = (lvl - lo) / (hi - lo)
-    if t < 0 then t = 0 elseif t > 1 then t = 1 end
-    return minB + (maxB - minB) * t
+    local L    = config.leveling or {}
+    local minB = tonumber(L.effectivenessMinBonus) or 2
+    local maxB = tonumber(L.effectivenessMaxBonus) or 20
+    local step = tonumber(L.effectivenessStepLevels) or 5
+    local inc  = tonumber(L.effectivenessStepBonus) or 2
+    if step < 1 then step = 1 end
+    -- Stepped, purely additive: start at minB at startLevel, gain `inc` every
+    -- `step` stance levels, hard-capped at maxB. Below startLevel clamps to minB.
+    local steps = math.floor((lvl - lo) / step)
+    if steps < 0 then steps = 0 end
+    local bonus = minB + steps * inc
+    if bonus > maxB then bonus = maxB end
+    if bonus < 0 then bonus = 0 end
+    return bonus
 end
 
 -- XP required to advance a stance from `level` to `level+1`. Stances are
@@ -261,8 +325,14 @@ local function xpForStanceLevel(level)
     local base  = tonumber(L.baseXpToLevel) or 8
     local ramp  = tonumber(L.xpRampPerLevel) or 0.06
     local maxXp = tonumber(L.maxXpToLevel) or 400
+    local slow  = tonumber(L.progressionSlowdown) or 1
+    if slow < 1 then slow = 1 end
     local req = base * (1 + math.max(0, (tonumber(level) or 0) - config.startLevel) * ramp)
-    if req > maxXp then req = maxXp end
+    -- Slow every stance level-up uniformly so stance progression reads as a
+    -- gentle companion to vanilla leveling rather than a fast parallel track.
+    req = req * slow
+    -- The cap is likewise scaled so the slowdown is preserved at high levels.
+    if req > maxXp * slow then req = maxXp * slow end
     if req < 1 then req = 1 end
     return req
 end
@@ -367,6 +437,7 @@ local INTEGRATION_SETTING_KEY = {
     traps          = 'integrateTraps',
     oilflask       = 'integrateOilFlask',
     spellsword     = 'integrateSpellsword',
+    hacklelopipes  = 'integrateHackleLoPipes',
     oblivionlockpicking = 'integrateOblivionLockpicking',
     talkingtrains  = 'integrateTalkingTrains',
     disenchanting  = 'integrateDisenchanting',
@@ -563,6 +634,7 @@ local prefixes = require('scripts.stance.player.prefixes').new({
     integrationEnabled = integrationEnabled,
     getActiveStance    = function() return activeStanceId end,
     getStanceLevel     = function(id) return getStanceLevel(id) end,
+    getCoreSkillLevel  = function() return getCoreSkillLevel() end,
 })
 local formatStanceName           = prefixes.formatStanceName
 local refreshImbuePrefix         = prefixes.refreshImbuePrefix
@@ -655,7 +727,12 @@ local dualWieldingAsOf         = -math.huge
 -- cancels it (the GRIP swap); if the window lapses with no re-equip, the
 -- off-hand really was dismissed and we clear. nil = no pending remove.
 local dualWieldingRemovePendingAt = nil
-local DUAL_WIELD_REMOVE_GRACE_SEC = 0.5
+-- Grace window for a transient RemoveSecondWeapon (GRIP swap, attack-animation
+-- re-equip, or a load-sequence re-equip). A re-equip within this window cancels
+-- the pending remove; only a remove that goes un-answered for this long clears
+-- Dualist. Widened from 0.5s so longer attack/load re-equip sequences don't drop
+-- the stance, without noticeably delaying a genuine off-hand dismissal.
+local DUAL_WIELD_REMOVE_GRACE_SEC = 1.0
 
 -- isDualWielding forward-declared above (the resolver module's ctx closure
 -- must capture the local, not resolve a global at call time).
@@ -995,6 +1072,10 @@ local xpModule = require('scripts.stance.player.xp').new({
     getStanceState   = getStanceState,
     saveStanceState  = saveStanceState,
     xpForStanceLevel = xpForStanceLevel,
+    getCoreBank      = getCoreBank,
+    saveCoreBank     = saveCoreBank,
+    getCoreSkillLevel = function() return getCoreSkillLevel() end,
+    notify           = function(msg) return notify(msg) end,
 })
 
 local grantStanceXp = xpModule.grantStanceXp
@@ -1009,6 +1090,31 @@ local felthornVoice = require('scripts.stance.player.felthorn_voice').new({
     core        = core,
     readSetting = readSetting,
 })
+
+-- ─── Blademeister: Soul Resonance / Soul Exhaustion (module) ─────────────
+-- The Felthorn "pact" meter. Builds from Felthorn hits/kills; on full it grants a
+-- transient weapon-skill surge (on Felthorn's resolved form) + Shield mitigation,
+-- then drains; on empty Felthorn is exhausted for a cooldown. Constructed here
+-- (after felthornVoice + resolveStanceSkill exist); buffs are peeled on load via
+-- clearBlademeisterBonuses(), exactly like the evasion/sol/muse delta trackers.
+local blademeister = require('scripts.stance.player.blademeister').new({
+    self = self, types = types, core = core,
+    config = config,
+    storage = storage,
+    readSetting = readSetting,
+    debugLog    = debugLog,
+    notify      = function(msg) return notify(msg) end,
+    voice       = felthornVoice,
+    getActiveStance    = function() return activeStanceId end,
+    resolveStanceSkill = resolveStanceSkill,
+    getCoreSkillLevel  = function() return getCoreSkillLevel() end,
+    perksEnabled       = function() return perksEnabledForStance('blademeister') end,
+})
+local updateBlademeister      = blademeister.update
+local clearBlademeisterBonuses = blademeister.clearBonuses
+-- Resonance bar data for the HUD ({ phase, ratio, tex }); nil unless Blademeister
+-- is active with something to show.
+local getBlademeisterMeter    = blademeister.getMeterInfo
 
 -- ─── Sol combat-mod integrations (STDA / SWCA) (module) ──────────────────
 -- Per-stance "timed directional attack" and "weighty charged attack" mastery
@@ -1025,6 +1131,7 @@ local solAttacks = require('scripts.stance.player.sol_attacks').new({
     readSetting        = readSetting,
     readForeignSetting = readForeignSetting,
     getStanceLevel     = function(id) return getStanceLevel(id) end,
+    getBonusLevel      = function(id) return bonusLevelFor(id) end,
     getActiveStance    = function() return activeStanceId end,
     integrationPresent = function(id) return integrationPresent(id) end,
     resolveStanceSkill = resolveStanceSkill,
@@ -1056,6 +1163,8 @@ local muse = require('scripts.stance.player.muse').new({
     stanceEnabled      = function(id) return stanceEnabled(id) end,
     grantStanceXp      = grantStanceXp,
     getStanceLevel     = function(id) return getStanceLevel(id) end,
+    getBonusLevel      = function(id) return bonusLevelFor(id) end,
+    getCoreSkillLevel  = function() return getCoreSkillLevel() end,
     resolveStanceSkill = resolveStanceSkill,
     getActiveStance    = function() return activeStanceId end,
 })
@@ -1067,6 +1176,64 @@ local clearMuseSkillBonuses = muse.clearMuseSkillBonuses
 local getMuseBuffInfo            = muse.getBuffInfo
 local getMuseSongTitlesForStance = muse.getSongTitlesForStance
 local getMusePerformanceStatus   = muse.getPerformanceStatus
+
+-- ─── HUD buff bars ────────────────────────────────────────────────────────
+-- Ordered list of bars the HUD stacks under the active stance's name. Each entry
+-- is { key, ratio (0..1), tex (vfs path), r, g, b }. Order is resonance → smoker →
+-- muse. Returns nil when none are active.
+--   • Blademeister Soul Resonance / Exhaustion — its own textures; red while
+--     building, purple while resonating, light-blue during the exhaustion cooldown.
+--   • Smoking buff — orange; only while the gated Hackle-Lo window is live.
+--   • Muse inspiration buff — yellow; only on the stance the song buffed (and only
+--     when it is the active stance, since getBuffInfo is keyed by the viewed stance).
+-- Smoker and muse reuse the near-white resonance texture, which tints cleanly.
+local BUFFBAR_RES_TEX = (config.blademeister and config.blademeister.barResonanceTexture)
+    or 'textures/Stance/resonance_bar.png'
+
+local function getActiveBars(activeId)
+    local bars = {}
+
+    local rb = getBlademeisterMeter(activeId)
+    if rb and rb.tex then
+        local r, g, b
+        if rb.phase == 'resonant' then
+            r, g, b = 0.62, 0.20, 0.92          -- purple (Soul Resonance draining)
+        elseif rb.phase == 'exhausted' then
+            r, g, b = 0.45, 0.78, 1.00          -- light blue (Soul Exhaustion cooldown)
+        else
+            r, g, b = 0.90, 0.13, 0.13          -- red (building the meter)
+        end
+        bars[#bars + 1] = {
+            key = 'res:' .. tostring(rb.phase), ratio = rb.ratio or 0,
+            tex = rb.tex, r = r, g = g, b = b,
+        }
+    end
+
+    local sb = prefixes.getSmokingBuffInfo and prefixes.getSmokingBuffInfo()
+    if sb and (tonumber(sb.window) or 0) > 0 then
+        local ratio = (tonumber(sb.remaining) or 0) / sb.window
+        if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+        bars[#bars + 1] = {
+            key = 'smoke', ratio = ratio,
+            tex = BUFFBAR_RES_TEX, r = 1.00, g = 0.55, b = 0.10,   -- orange
+        }
+    end
+
+    local mb = getMuseBuffInfo and getMuseBuffInfo(activeId)
+    if mb then
+        local dur = tonumber(mb.duration) or 0
+        local rem = tonumber(mb.remaining) or 0
+        local ratio = (dur > 0) and (rem / dur) or 1
+        if ratio < 0 then ratio = 0 elseif ratio > 1 then ratio = 1 end
+        bars[#bars + 1] = {
+            key = 'muse', ratio = ratio,
+            tex = BUFFBAR_RES_TEX, r = 1.00, g = 0.92, b = 0.20,   -- yellow
+        }
+    end
+
+    if #bars == 0 then return nil end
+    return bars
+end
 
 -- ─── Skill Framework registration ─────────────────────────────────────────
 
@@ -1094,6 +1261,7 @@ local skillFramework = require('scripts.stance.player.skill_framework').new({
     currentFortifiedBlockBonus = currentFortifiedBlockBonus,
     currentBrawlerGauntletHhBonus = currentBrawlerGauntletHhBonus,
     currentSmokingWeaponBonus  = currentSmokingWeaponBonus,
+    getSmokingBuffInfo         = prefixes.getSmokingBuffInfo,
     getActivePrefixNotes    = getActivePrefixNotes,
     -- Subtype-aware perk ladder accessor (Forager shows gardening vs harvesting
     -- perks by the tool in hand); every other stance returns its single ladder.
@@ -1230,12 +1398,13 @@ local hudModule = require('scripts.stance.player.hud').new({
     getStanceConfig = getStanceConfig,
     formatStanceName = formatStanceName,
     getActivePrefixIcons = getActivePrefixIcons,
+    getActiveBars = function(id) return getActiveBars(id) end,
 })
 
 local updateHud          = hudModule.updateHud
 local destroyHud         = hudModule.destroyHud
 local feedbackReflow     = hudModule.feedbackReflow
-local notify             = hudModule.notify
+notify                   = hudModule.notify
 local onUiModeChanged    = hudModule.onUiModeChanged
 
 -- ─── Messaging (single, simple path) ──────────────────────────────────────
@@ -1246,7 +1415,9 @@ local function drainStanceLevelUps()
     for _, up in ipairs(ups) do
         local stance = getStanceConfig(up.stanceId)
         local name = (stance and stance.displayName) or up.stanceId
-        notify(string.format('%s level %d', name, up.level))
+        -- Per-stance level-up. Worded distinctly from Skill Framework's CORE
+        -- "Your Stance skill increased to N" message so the two never read alike.
+        notify(string.format('%s stance advances to level %d', name, up.level))
         debugLog(string.format('Stance level-up: %s → %d', up.stanceId, up.level),
             'debugXpMessages')
     end
@@ -1336,6 +1507,9 @@ local function onPlayerDealtHit(data)
         target = data.target,
         weapon = data.weapon,
     })
+    -- Build the Blademeister Soul Resonance meter on Felthorn hits (no-op for
+    -- other stances / when the feature is off).
+    blademeister.onHit(activeStanceId)
 end
 
 -- ─── Spell cast handler (text-key path, like Incantation uses) ────────────
@@ -1522,6 +1696,8 @@ local function onStanceKillGrant(_payload)
     end
     -- Felthorn's post-kill remark (no-op unless Blademeister is active).
     felthornVoice.onKill(activeStanceId)
+    -- Felthorn kills feed the Soul Resonance meter harder than ordinary hits.
+    blademeister.onKill(activeStanceId)
     -- Reserved hook for future kill-triggered perk effects.
     Perks.onKill()
 end
@@ -1532,6 +1708,7 @@ local function onUiModeChangedCombined(data)
     pcall(function() if onUiModeChanged then onUiModeChanged(data) end end)
 
     if type(data) ~= 'table' then return end
+
     if data.newMode == 'Dialogue' and data.oldMode == nil then
         if not talkDebounce then
             talkDebounce = true
@@ -1617,6 +1794,28 @@ local function onUpdate(dt)
         dualWieldingRemovePendingAt = nil
     end
 
+    -- Dualist persistence hardening. The 60s staleness guard in isDualWielding
+    -- only refreshes its freshness stamp on ticks where the resolver actually
+    -- reaches the Dualist branch AND every condition holds — so an irregular
+    -- resolver path or a missed attack-time Remove/Equip event could let the
+    -- stamp go stale and silently drop Dualist back to the right-hand weapon's
+    -- stance "after a while". Here we refresh the stamp UNCONDITIONALLY every
+    -- tick that the off-hand is mounted (dualWieldingActive, with no pending
+    -- remove) AND a one-handed melee primary is in hand — exactly the situation
+    -- in which Dualist should persist. Genuine dismissal is still handled by the
+    -- Remove grace window above, and switching to a two-handed weapon still fails
+    -- the 1H check here and in the resolver, so Dualist drops correctly then.
+    if dualWieldingActive and not dualWieldingRemovePendingAt then
+        local right = getRightHandWeapon()
+        if right then
+            local rightRec = safeWeaponRecord(right)
+            local runtimeRec = rightRec and runtimeWeaponRecord(right, rightRec) or nil
+            if runtimeRec and isOneHandedMelee(runtimeRec) then
+                dualWieldingAsOf = now
+            end
+        end
+    end
+
     if accumulatedSettingsSync >= 0.5 then
         syncSettingsToGlobal(not initRequested)
         accumulatedSettingsSync = 0
@@ -1694,6 +1893,10 @@ local function onUpdate(dt)
 
     -- Felthorn's ambient voice (no-op unless Blademeister is active).
     felthornVoice.update(activeStanceId, now)
+
+    -- Blademeister Soul Resonance state machine: build/decay/drain/cooldown and
+    -- reapply the resonant buffs. No-op unless Blademeister is active.
+    updateBlademeister(activeStanceId, dt)
 
     -- Refresh the Spellsword imbue prefix BEFORE the tooltip + HUD re-render,
     -- so formatStanceName() returns the current decoration this same tick.
@@ -1796,6 +1999,11 @@ local function onLoad(data)
     -- trackers so the first updateMuse re-applies from a clean baseline (the
     -- persisted buff remaining-times are reloaded from the Muse storage section).
     clearMuseSkillBonuses()
+    -- Blademeister Soul Resonance rides a skill modifier + a Shield active-effect,
+    -- both zeroed by the engine on load; reset our trackers so the first
+    -- updateBlademeister re-applies from a clean baseline (phase/meter are reloaded
+    -- from the Blademeister storage section).
+    clearBlademeisterBonuses()
     -- Same reasoning for the Hackle-Lo smoke Speed-drain offset: the engine
     -- zeroes the attribute modifiers our offset rides on, so reset our tracker
     -- or the first refreshSmoking would over-apply against a stale baseline.

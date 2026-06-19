@@ -56,6 +56,11 @@ function M.new(ctx)
     local getStanceState  = ctx.getStanceState  or function() return {} end
     local saveStanceState = ctx.saveStanceState or function() end
     local xpForStanceLevel = ctx.xpForStanceLevel or function() return 8 end
+    -- Rest-gated core leveling deps (optional; absent → gating inert).
+    local getCoreBank      = ctx.getCoreBank      or function() return { banked = 0, pending = false } end
+    local saveCoreBank     = ctx.saveCoreBank     or function() end
+    local getCoreSkillLevel = ctx.getCoreSkillLevel or function() return config.startLevel or 5 end
+    local notify           = ctx.notify          or function() end
 
     -- ── XP source → settings key gate ────────────────────────────────────
 
@@ -91,14 +96,66 @@ function M.new(ctx)
     end
 
     -- ── Core skill feeder ─────────────────────────────────────────────────
-    -- Called with HALF the stance XP whenever the active stance gains XP.
+    -- Called with HALF the stance XP whenever the active stance gains XP, then
+    -- divided by the progression slowdown so the shared core skill takes the
+    -- same multiple longer to advance as the individual stances do.
 
-    local function feedCoreSkill(amount)
+    local function coreSlowdown()
+        local s = tonumber(config.leveling and config.leveling.progressionSlowdown) or 1
+        if s < 1 then s = 1 end
+        return s
+    end
+
+    -- ── Rest-gated core leveling ──────────────────────────────────────────
+    -- When config.coreRestGating.enabled, the half-stance core feed is BANKED
+    -- instead of fed to Skill Framework. Once the bank reaches the next core
+    -- level's requirement the core skill is "ready" (pending) and ALL stance XP
+    -- is blocked (see creditStance) until the player rests, at which point
+    -- flushCoreBankOnRest() feeds the bank to SF and the core skill levels.
+
+    local function restGatingOn()
+        return (config.coreRestGating and config.coreRestGating.enabled) == true
+    end
+
+    -- Bank required for the core skill's NEXT level. Mirrors xpForStanceLevel and
+    -- carries the progression slowdown, so the core skill takes the slowdown
+    -- multiple longer to advance.
+    local function coreXpForLevel(level)
+        local g = config.coreRestGating or {}
+        local base  = tonumber(g.baseXpToLevel) or 12
+        local ramp  = tonumber(g.rampPerLevel) or 0.07
+        local maxXp = tonumber(g.maxXpToLevel) or 500
+        local lo    = config.startLevel or 5
+        local req = base * (1 + math.max(0, (tonumber(level) or lo) - lo) * ramp)
+        if req > maxXp then req = maxXp end
+        req = req * coreSlowdown()
+        if req < 1 then req = 1 end
+        return req
+    end
+
+    local function feedSkillFramework(amount)
         if amount <= 0 then return end
         if I.SkillFramework and I.SkillFramework.skillUsed then
             pcall(I.SkillFramework.skillUsed, SKILL_ID, { useType = 1, skillGain = amount })
         end
     end
+
+    -- Core feed: the shared core "Stance" skill gains a SMALL fraction of the
+    -- stance's XP whenever an active stance gains XP. creditStance passes half the
+    -- scaled stance XP, and this divides it again by the progression slowdown, so
+    -- the core advances at roughly one-sixth the stance's per-event rate (half ÷ 3
+    -- at the default slowdown). That keeps the core trailing WELL behind the active
+    -- stance — it is a slow running measure of overall mastery, not a fast-levelling
+    -- skill. The core then levels normally, like any other Skill Framework skill.
+    local function feedCoreSkill(amount)
+        if amount <= 0 then return end
+        feedSkillFramework(amount / coreSlowdown())
+    end
+
+    -- Retained as harmless no-ops for any external callers (the rest-gate was
+    -- removed): nothing blocks stance XP, and there is no bank to flush.
+    local function coreLevelPending() return false end
+    local function flushCoreBankOnRest() return false end
 
     -- ── Level-up queue ────────────────────────────────────────────────────
     -- Filled by grantStanceXp; drained by init.lua's onUpdate via
@@ -128,6 +185,21 @@ function M.new(ctx)
         if gate and readSetting('Progression', gate, true) ~= true then return end
 
         local scaled = amount * xpMultiplier()
+
+        -- Dualist splits its attention between two weapons, so its hit/kill XP is
+        -- halved, and "blocking" while juggling two weapons is likewise worth half.
+        -- A N'Garde parry IS the block in a dual-wield context (weapon parries work
+        -- without a shield), so the parry sources are scaled by the block factor.
+        -- Gated strictly on the Dualist stance, so no other stance is affected.
+        if stanceId == 'dualist' then
+            local xpc = config.xp or {}
+            if source == 'hit' or source == 'kill' then
+                scaled = scaled * (tonumber(xpc.dualistHitXpScale) or 0.5)
+            elseif source == 'block' or source == 'parry' or source == 'perfectparry' then
+                scaled = scaled * (tonumber(xpc.dualistBlockXpScale) or 0.5)
+            end
+        end
+
         if scaled <= 0 then return end
 
         -- Credit the stance's own pool and resolve any level-ups.
@@ -149,11 +221,13 @@ function M.new(ctx)
         end
         saveStanceState()
 
-        -- Core skill gets half the additive value, fed independently.
+        -- Core skill gains HALF the stance's scaled XP, then feedCoreSkill divides
+        -- that again by the progression slowdown (so ~1/6 the stance's rate at the
+        -- default slowdown of 3). The core trails the active stance, by design.
         feedCoreSkill(scaled * 0.5)
 
-        debugLog(string.format('Stance XP +%0.2f → %s [%s] (lvl %d, xp %0.1f); core +%0.2f',
-            scaled, stanceId, source or '?', entry.level, entry.xp, scaled * 0.5),
+        debugLog(string.format('Stance XP +%0.2f → %s [%s] (lvl %d, xp %0.1f); core +%0.3f',
+            scaled, stanceId, source or '?', entry.level, entry.xp, (scaled * 0.5) / coreSlowdown()),
             'debugXpMessages')
     end
 
@@ -207,6 +281,8 @@ function M.new(ctx)
         handleTimeTick      = handleTimeTick,
         drainPendingLevelUps = drainPendingLevelUps,
         resetAccumulator    = resetAccumulator,
+        flushCoreBankOnRest = flushCoreBankOnRest,
+        coreLevelPending    = coreLevelPending,
     }
 end
 

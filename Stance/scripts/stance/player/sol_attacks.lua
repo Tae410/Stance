@@ -85,6 +85,10 @@ function M.new(ctx)
     local readSetting        = ctx.readSetting
     local readForeignSetting = ctx.readForeignSetting
     local getStanceLevel     = ctx.getStanceLevel
+    -- Level fed to the bonus magnitude: the CORE Stance level (threaded from
+    -- init.lua), so Sol timed/weighty bonuses grow with overall mastery rather
+    -- than this stance's own level. Falls back to stance level if absent.
+    local getBonusLevel      = ctx.getBonusLevel or ctx.getStanceLevel
     local getActiveStance    = ctx.getActiveStance
     local integrationPresent = ctx.integrationPresent
     local resolveStanceSkill = ctx.resolveStanceSkill
@@ -100,13 +104,13 @@ function M.new(ctx)
 
     -- ─── Helpers ─────────────────────────────────────────────────────────
 
-    -- Linear stance-level ramp: 0 at startLevel → 1 at maxLevel. Identical to
-    -- the curve used by effectivenessSkillBonus and getStanceEvasionBonus.
+    -- Linear ramp: 0 at startLevel → 1 at maxLevel, on the CORE Stance level
+    -- (bonuses gate on core level, not the individual stance level).
     local function levelFactor(stanceId)
         local lo  = config.startLevel or 5
         local hi  = config.maxLevel   or 100
         if hi <= lo then return 1 end
-        local lvl = getStanceLevel(stanceId)
+        local lvl = getBonusLevel(stanceId)
         local t = (lvl - lo) / (hi - lo)
         if t < 0 then t = 0 elseif t > 1 then t = 1 end
         return t
@@ -252,21 +256,24 @@ function M.new(ctx)
         tracker.amount = newAmount
     end
 
-    -- Refresh both Sol bonuses for the active stance. Called every poll tick
-    -- (same cadence as refreshEvasionBonus / refreshEffectivenessModifiers).
+    -- Refresh both Sol bonuses for the active stance. Called every poll tick.
+    --
+    -- DESIGN CHANGE (balance): Stance no longer applies a PERSISTENT passive
+    -- weapon-skill bonus for Sol affinity. The Sol mods already grant their own
+    -- transient buff at the exact moment the player perfectly times a directional
+    -- attack (STDA) or effectively charges a weighty attack (SWCA); doubling that
+    -- with an always-on Stance modifier made the affinity stances wildly
+    -- overpowered and let the bonus "exist" outside the timed/charged window. So
+    -- here we apply NOTHING and actively peel any contribution we previously held
+    -- back to zero. The affinity is now purely informational (surfaced in the
+    -- tooltip via the signature/magnitude accessors below); the real reward is the
+    -- Sol mod's own buff, earned only on a clean strike.
     local function refreshSolBonuses()
-        local stanceId = getActiveStance()
-        local accessor, skillId = nil, nil
-        if stanceId then accessor, skillId = targetSkillAccessor(stanceId) end
-
-        local timed   = stanceId and timedBonusFor(stanceId)   or 0
-        local weighty = stanceId and weightyBonusFor(stanceId) or 0
-
-        -- Both systems target the SAME resolved weapon skill of the active
-        -- stance; each tracker only ever adjusts its own delta, so applying
-        -- them in sequence to the same skill composes correctly.
-        applyToSkill(appliedTimed,   timed   > 0 and skillId or nil, timed   > 0 and accessor or nil, timed)
-        applyToSkill(appliedWeighty, weighty > 0 and skillId or nil, weighty > 0 and accessor or nil, weighty)
+        -- Peel any contribution we may still be tracking (e.g. left over from a
+        -- previous build's behaviour or a mid-session settings change) so the
+        -- target skill is never inflated by us.
+        applyToSkill(appliedTimed,   nil, nil, 0)
+        applyToSkill(appliedWeighty, nil, nil, 0)
     end
 
     -- Zero our trackers without writing to the engine. Called from init.lua's

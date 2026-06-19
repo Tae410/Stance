@@ -84,15 +84,36 @@ local config = {
         baseXpToLevel  = 8,     -- flat base xp for the first stance level-up
         xpRampPerLevel = 0.06,  -- +6% required xp per level above startLevel
         maxXpToLevel   = 400,   -- hard cap on per-level xp requirement
-        -- Effectiveness is now an additive skill-point bonus applied via Skill
-        -- Framework's registerDynamicModifier on the skill tied to each stance's
-        -- weapon type or modded integration. The bonus ramps linearly from
-        -- effectivenessMinBonus at startLevel to effectivenessMaxBonus at maxLevel.
-        --   Soloist lv 5  - +2 Long Blade
-        --   Soloist lv 52 - +11 Long Blade   (approx midpoint)
-        --   Soloist lv 100 - +20 Long Blade
-        effectivenessMinBonus = 2,  -- additive skill pts at startLevel
-        effectivenessMaxBonus = 20, -- additive skill pts at maxLevel
+
+        -- ── Progression slowdown ──────────────────────────────────────────
+        -- Multiplies the XP required for EVERY stance level-up, and divides the
+        -- amount fed to the core Stance skill, so BOTH the per-stance levels and
+        -- the shared core skill take this many times longer to advance. Set to
+        -- 3 so Stance leveling reads as a slow, seamless companion to vanilla
+        -- Morrowind leveling rather than a fast parallel track.
+        progressionSlowdown = 3,
+
+        -- ── Effectiveness (additive weapon-skill bonus) ───────────────────
+        -- The bonus a stance grants to its OWN target skill is now a STEPPED,
+        -- purely additive value driven by the stance's own level. It is gained
+        -- in discrete +effectivenessStepBonus increments every
+        -- effectivenessStepLevels stance levels, starting at effectivenessMinBonus
+        -- at startLevel and HARD-CAPPED at effectivenessMaxBonus. This replaces
+        -- the old smooth linear ramp; the stepped form makes the gain feel earned
+        -- and keeps the early-game number small.
+        --   Soloist lv 5   - +2  Long Blade   (startLevel: effectivenessMinBonus)
+        --   Soloist lv 10  - +4  Long Blade
+        --   Soloist lv 25  - +10 Long Blade
+        --   Soloist lv 50  - +20 Long Blade   (cap reached: effectivenessMaxBonus)
+        --   Soloist lv 100 - +20 Long Blade   (held at cap)
+        -- IMPORTANT: this bonus is applied to ONE skill — the active stance's
+        -- target skill — and ONLY while that stance is active. Switching stances
+        -- moves it; leaving a weapon stance clears it. It NEVER persists onto a
+        -- skill whose stance you are not currently in.
+        effectivenessMinBonus = 2,   -- additive skill pts at startLevel
+        effectivenessMaxBonus = 20,  -- additive skill pts cap (hard ceiling)
+        effectivenessStepLevels = 5, -- gain a step every this many stance levels
+        effectivenessStepBonus  = 2, -- +this many skill pts per step
     },
 
     -- ─── Fortified (shield + one-handed melee) ────────────────────────────
@@ -269,6 +290,24 @@ local config = {
         -- you happen to be wielding (you can plant a seed bare-handed), mirroring
         -- the way the source mod levels its Gardening skill on both actions.
         gardeningProgressScale = 15.00,
+
+        -- ── Dualist split penalty ─────────────────────────────────────────
+        -- Dualist divides its attention between the right-hand and off-hand
+        -- weapon, so its on-hit and on-kill XP is HALVED to simulate that split.
+        -- Blocking while in Dualist is likewise worth half (you are juggling two
+        -- weapons, not bracing behind a shield). These scale the relevant XP
+        -- sources ONLY when Dualist is the active stance.
+        dualistHitXpScale   = 0.5,  -- multiplies hit/kill XP while Dualist
+        dualistBlockXpScale = 0.5,  -- multiplies block XP while Dualist
+
+        -- ── Locksmith lock-difficulty scaling ─────────────────────────────
+        -- A picked or probed lock grants lockpickSuccess (above) as a floor, plus
+        -- a bonus proportional to the object's lock/trap difficulty IF Oblivion-
+        -- Style Lockpicking reports it in its success event. A stubborn lock is a
+        -- bigger triumph than a flimsy one. Degrades gracefully to the flat floor
+        -- when no difficulty is reported.
+        lockpickPerDifficulty = 0.10,  -- bonus XP per point of lock difficulty
+        lockpickMaxBonus      = 6.00,  -- cap on the difficulty bonus
     },
 
     -- ─── Stance definitions ───────────────────────────────────────────────
@@ -343,20 +382,20 @@ local config = {
             sneakWeaponSkillBonus = true,  -- weapon skill bonus while sneaking   -- Soul-bond sharpens reactions; strong dodge
             perks = {
                 {
-                    level = 25, id = 'soulPerception', name = 'Soul Perception',
-                    description = 'The meister\'s gift: to see what others cannot. Sneak and Mysticism each increase by five while Felthorn is in hand.',
+                    level = 25, id = 'quickeningHunger', name = 'Quickening Hunger',
+                    description = 'Soul Resonance builds 50% faster from hits and kills.',
                 },
                 {
-                    level = 50, id = 'soulWavelength', name = 'Soul Wavelength',
-                    description = 'The blade and the arm learn each other\'s rhythm. Weapon damage increases by fifteen percent; hits carry a chance to disrupt the target.',
+                    level = 50, id = 'sustainedResonance', name = 'Sustained Resonance',
+                    description = 'Resonance lasts longer — the meter drains a third slower.',
                 },
                 {
-                    level = 75, id = 'witchHunter', name = 'Witch Hunter',
-                    description = 'The pact resolves into motion. Power attacks deal thirty percent more damage and carry a chance to strike twice.',
+                    level = 75, id = 'tirelessPact', name = 'Tireless Pact',
+                    description = 'Soul Exhaustion cooldown is halved.',
                 },
                 {
-                    level = 100, id = 'soulResonance', name = 'Soul Resonance',
-                    description = 'Meister and weapon, indistinguishable. Damage increases by a quarter; attack speed improves; the blade ignores a portion of armor.',
+                    level = 100, id = 'endlessResonance', name = 'Endless Resonance',
+                    description = 'A kill while resonating refills the meter; the resonant surge is stronger.',
                 },
             },
         },
@@ -904,10 +943,29 @@ local config = {
             -- No effectiveness target (Muse buffs OTHER stances, not a weapon
             -- skill of its own) and no evasion bonus; it is a non-combat stance.
             evasionBonus = 0,
-            -- Per the design, Muse has NO perks. Its only level reward is the
-            -- loop allowance (config.muse.loopMilestoneInterval): +1 loopable
-            -- buff per milestone, handled in player/muse.lua.
-            perks = {},
+            -- Muse perks augment the song-buff mechanic itself rather than a
+            -- weapon skill. They are read by player/muse.lua (gated on the CORE
+            -- Stance level like every other ladder) to scale the inspiration
+            -- economy: cheaper notes, broader reach, longer windows, and a
+            -- capstone that rewards the player's own composed songs.
+            perks = {
+                {
+                    level = 25, id = 'easyBreath', name = 'Easy Breath',
+                    description = 'A practiced player wastes no wind. Fatigue drained per note while performing is reduced by a third.',
+                },
+                {
+                    level = 50, id = 'sharedRefrain', name = 'Shared Refrain',
+                    description = 'A great melody lifts more than one craft. A finished song now bestows its inspiration on a second, kindred stance at half strength.',
+                },
+                {
+                    level = 75, id = 'lingeringChord', name = 'Lingering Chord',
+                    description = 'The best songs are not soon forgotten. Inspiration buff windows last a quarter longer before they fade.',
+                },
+                {
+                    level = 100, id = 'ownComposition', name = "Composer's Voice",
+                    description = 'What you author, you command. A song of your own composition inspires at full magnitude regardless of length, and its window is never cut short by the level gate.',
+                },
+            },
         },
     },
 
@@ -1317,11 +1375,38 @@ local config = {
 
         -- Buff-timer economy: each successful note adds time, each fumbled note
         -- subtracts it; the total (clamped >= 0) becomes the buff duration.
-        successSeconds = 1.5,   -- buff seconds gained per successful note
+        successSeconds = .75,   -- buff seconds gained per successful note
         failSeconds    = 1.0,   -- buff seconds lost per fumbled note
         -- Fatigue drained per note played (success vs fumble).
-        successFatigue = 2,
-        failFatigue    = 4,
+        successFatigue = 1,
+        failFatigue    = 3,
+
+        -- ── Buff duration: gated to Muse stance level (EXTENDED) ───────────
+        -- The note-ledger time is multiplied by buffDurationScale, then capped by
+        -- a window that grows with the MUSE stance's level: gateBaseSeconds at
+        -- gateAtLevel, +gateAddSeconds every gatePerLevels Muse levels. Extended
+        -- so inspiration lingers noticeably longer than before.
+        --   Muse lv 5  - up to 20s
+        --   Muse lv 15 - up to 35s
+        --   Muse lv 25 - up to 50s ...
+        buffDurationScale = 1.0,
+        gateBaseSeconds   = 20,
+        gateAtLevel       = 5,
+        gatePerLevels     = 10,
+        gateAddSeconds    = 15,
+
+        -- 'Shared Refrain' (Muse perk, lv 50): a finished song also inspires a
+        -- second, KINDRED stance at half magnitude. This maps each inspirable
+        -- stance to its kin (same weapon family / role). Bidirectional; stances
+        -- absent here simply get no second buff. Tune freely to taste.
+        kindredStance = {
+            soloist   = 'zweihander',  zweihander  = 'soloist',     -- Long Blade kin
+            axeman    = 'mjolnir',     mjolnir     = 'axeman',       -- swung-weight kin
+            huntsman  = 'twirler',     twirler     = 'huntsman',     -- finesse / agility kin
+            arcanist  = 'thaumaturge', thaumaturge = 'arcanist',     -- caster kin
+            thief     = 'guisarmier',  guisarmier  = 'thief',        -- reach / speed kin
+            brawler   = 'pitmen',      pitmen      = 'brawler',      -- endurance bruiser kin
+        },
 
         -- Loop allowance: how many loops of a song contribute to the buff timer.
         -- Grows +1 per Muse milestone (every loopMilestoneInterval levels).
@@ -1367,6 +1452,49 @@ local config = {
             ['arcane'] = 'thaumaturge',
         },
     },
+
+    -- ─── Smoker prefix (Hackle-Lo Pipes) buff gating ──────────────────────
+    -- The Smoking weapon-skill bonus (+weaponBonus while a smoke buff is live)
+    -- now lasts a WINDOW that Stance manages itself, rather than tracking the
+    -- pipe potion's full effect duration. The window is the smoke potion's own
+    -- remaining time, first multiplied by durationScale (0.5 = halved), then
+    -- HARD-CAPPED by a window that grows with the CORE Stance skill level:
+    -- gateBaseSeconds at gateAtLevel, +gateAddSeconds every gatePerLevels core
+    -- levels.
+    --   core lv 5  - up to 10s   (gateBaseSeconds at gateAtLevel)
+    --   core lv 15 - up to 20s
+    --   core lv 25 - up to 30s ...
+    -- The pipe's Speed-drain cancellation is unaffected and still lasts the
+    -- full potion duration; only the +weaponBonus window is gated here.
+    smoker = {
+        weaponBonus     = 10,   -- additive weapon-skill pts while the window is live
+        durationScale   = 1.0,  -- use the potion's full remaining time (EXTENDED)
+        gateBaseSeconds = 20,
+        gateAtLevel     = 5,
+        gatePerLevels   = 10,
+        gateAddSeconds  = 15,
+    },
+
+    -- ─── Core Stance rest-gated leveling ──────────────────────────────────
+    -- Vanilla-Morrowind-style leveling for the CORE Stance skill. While building
+    -- toward the next core level, the half-stance XP feed is BANKED rather than
+    -- fed to Skill Framework, so the core skill does not level on its own. Once
+    -- the bank reaches the next level's requirement, the core skill is "ready"
+    -- and ALL stance XP gain is blocked until the player RESTS (the vanilla rest
+    -- menu, detected via the Rest UI mode). On a completed rest the bank is
+    -- flushed to Skill Framework — the core skill levels — and XP flows again.
+    --   * enabled=false restores the old behaviour (continuous core feed, no gate).
+    --   * The requirement curve mirrors xpForStanceLevel and is *progressionSlowdown
+    --     already (baked into coreXpForLevel), so the core skill takes the slowdown
+    --     multiple longer just like the per-stance levels.
+    coreRestGating = {
+        enabled         = true,
+        baseXpToLevel   = 12,    -- base bank needed for the first core level
+        rampPerLevel    = 0.07,  -- +7% bank required per core level above startLevel
+        maxXpToLevel    = 500,   -- cap on the per-level bank requirement (pre-slowdown)
+        restMinGameHours = 1,    -- a rest must advance at least this many game-hours to count
+    },
+
 
     -- The Reforger stance's detection trigger. Both WeaponUpgrade and
     -- ArmorUpgrade gate their behavior on the player holding this exact
@@ -1416,13 +1544,61 @@ local config = {
     -- voice is patient, hungry, and faintly amused — it regards its wielder as
     -- a temporary partnership and every kill as a shared meal. Lines avoid
     -- naming real NPCs/places so they stay setting-neutral and lore-safe.
+    -- ─── Blademeister: Soul Resonance / Soul Exhaustion ───────────────────
+    -- The Felthorn pact meter (player/blademeister.lua). Build it with Felthorn
+    -- hits/kills; at full it RESONATES (weapon-skill surge on Felthorn's resolved
+    -- form + Shield mitigation) and drains; at empty Felthorn is EXHAUSTED for a
+    -- cooldown. The weapon-skill bonus rides the same additive native-modifier path
+    -- as effectiveness/muse; the mitigation rides a Shield active-effect like the
+    -- evasion Sanctuary bonus. State persists; buffs are transient.
+    blademeister = {
+        enabled       = true,
+
+        -- Meter economy (points; meterMax is the trigger threshold).
+        meterMax      = 100,
+        buildPerHit   = 4,    -- meter per landed Felthorn hit
+        buildPerKill  = 10,    -- meter per Felthorn kill
+        decayPerSec   = 10,     -- passive meter decay while BUILDING and not hitting
+        decayGraceSec = 3,     -- no decay for this long after the last hit
+
+        -- Resonant payoff.
+        drainPerSec     = 10,   -- meter drained per second while RESONANT (≈12.5s window at full)
+        weaponSkillBonus = 10, -- additive pts to Felthorn's resolved weapon skill (more skill → more damage)
+        shieldPoints     = 10, -- Shield active-effect magnitude (armor rating → damage mitigation)
+
+        -- Exhaustion cooldown (seconds) before the meter can build again.
+        cooldownSec   = 20,
+
+        -- Feedback toggles.
+        voiceResonance   = true,  -- speak on RESONANT
+        voiceExhaustion  = true,  -- speak on EXHAUSTED
+        flashOnResonance = false, -- reserved: no verified screen-flash API in this build
+
+        -- HUD resonance bar textures (880×64 PNG in icons/Stance). The resonance
+        -- texture fills while building/resonating; the exhaustion texture fills as
+        -- Felthorn recovers during the cooldown.
+        barResonanceTexture  = 'textures/Stance/resonance_bar.png',
+        barExhaustionTexture = 'textures/Stance/lag_bar.png',
+
+        -- Perk augments (unlock on the CORE Stance level like every ladder; only
+        -- take effect while Blademeister perks are enabled). Each centres on a
+        -- phase of the Soul Resonance lifecycle.
+        perks = {
+            quickeningBuildMult  = 1.5,   -- 25  Quickening Hunger: meter gain ×this
+            sustainedDrainMult   = 0.667, -- 50  Sustained Resonance: resonant drain ×this (slower)
+            tirelessCooldownMult = 0.5,   -- 75  Tireless Pact: exhaustion cooldown ×this (shorter)
+            endlessKillCascade   = true,  -- 100 Endless Resonance: a kill while resonant refills the meter
+            endlessResonantBoost = 1.25,  -- 100 Endless Resonance: resonant skill+shield ×this
+        },
+    },
+
     felthornAmbient = {
         enabled = true,
 
         -- Seconds between idle lines while equipped. A line fires at a random
         -- interval in [minIntervalSec, maxIntervalSec] so it never feels metronomic.
-        minIntervalSec = 75,
-        maxIntervalSec = 160,
+        minIntervalSec = 20,
+        maxIntervalSec = 75,
 
         -- Brief quiet period after first equipping before the first idle line,
         -- so the equip line (greetings) isn't immediately followed by chatter.
@@ -1457,13 +1633,30 @@ local config = {
         },
 
         -- Spoken (chance-gated) right after a kill while the stance is active.
-        onKillChance = 0.5,
+        onKillChance = 1,
         onKill = {
             'Mmm. That one had more to give than it looked.',
             'A soul, neatly folded and put away. We are well fed.',
             'Felthorn warms. Do not stop now — hunger returns so quickly.',
             'One more for the long dark inside me. They are never lonely there.',
             'You strike, I keep. A fair division of labor.',
+        },
+
+        -- Spoken the instant the Soul Resonance meter fills (BUILDING -> RESONANT).
+        -- The pact speaks as one voice.
+        resonance = {
+            'SOUL RESONANCE. You and Felthorn cry out as one — the blade sings white.',
+            'The hunger and the hand align. Felthorn blazes: "RESONANCE!"',
+            'Now we are of one mind. Strike, vessel — the souls answer with us.',
+            'Felthorn floods you with borrowed strength. "Together, then. RESONANCE."',
+        },
+
+        -- Spoken when the meter drains to empty (RESONANT -> EXHAUSTED).
+        exhaustion = {
+            'The fire gutters. Felthorn falls quiet — spent, and needing rest.',
+            'Enough. The souls are still. Let me gather myself before we burn again.',
+            'Felthorn cools in your grip, hunger sated for now. Give it a moment.',
+            'The resonance fades to ash. We have spent ourselves; we must wait.',
         },
     },
 }
