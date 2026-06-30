@@ -43,6 +43,7 @@ own events live in the `Stance_*` namespace.
 |---|---|
 | **N'Garde** | Parry success → parry XP for the **active** stance, with a larger reward for a perfect parry (`ngarde_parrySelf` carries the `isPerfect` flag) |
 | **Gothic Style Knockout** | Brawler knockout-chance proc via `GKD_DoKnockdown` |
+| **Iron Fist for OpenMW** | Detected via its settings mirror (`IronFistRuntime`). While Brawler is active with a gauntlet or bracer equipped, Brawler adds its own extra unarmed damage on top of Iron Fist's gauntlet bonus, scaled by Brawler's stance level and the Iron Grip perk. See *Brawler + Iron Fist* below |
 | **Evasion!** | Surfaces the dodge/Sanctuary bonus in the tooltip with an "Evasion!" attribution (the two contributions track separate deltas and never interfere) |
 | **Sol's Timed Directional Attacks** | Detected via its settings section (`Settings_SolTimedDirAttacks`). Tempo-driven stances gain a passive weapon-skill bonus — *timed-directional-attack mastery* — ceilinged from STDA's own `buffBase` and scaled by the core Stance level. See *Sol combat-mod mastery* below |
 | **Sol's Weighty Charged Attacks** | Detected via its settings section (`Settings_SolWeightyChargeAttacks`). Heavy, committed stances gain a passive weapon-skill bonus — *weighty-charged-attack mastery* — ceilinged from SWCA's own `buffBase`/`maxCharge` and the equipped weapon's weight, and scaled by the core Stance level. See *Sol combat-mod mastery* below |
@@ -68,12 +69,36 @@ own events live in the `Stance_*` namespace.
 | **Meditation Skill** | Arcanist tick XP via the SkillProgression hook |
 | **Disenchanting** | Arcanist / Thaumaturge XP via `disenchanting_finishedDisenchanting` |
 | **Transcribe** | Arcanist / Thaumaturge XP via `TRAN_doTranscribe` |
+| **OSSC (Oblivion-Style Spell Casting)** | Credits the spellcasting stance (Arcanist by default) on each OSSC quick-cast, read from OSSC's own `OSSC_CastingState` event. OSSC casts use their own animations and bypass the vanilla `spellcast` text-key, so without this they earn nothing; the credit is direct (any active stance) and respects the **XP on spell cast** toggle. No OSSC edit required |
 | **Weapon Upgrade** | Detects the `repair_hammer_weapon` for Reforger and credits Reforger XP on a successful (or failed) upgrade |
 | **Armor Upgrade** | Same hammer detection as Weapon Upgrade — credits Reforger |
 | **Oblivion-Style Lockpicking** | Locksmith lockpick XP via `OSL_LockpickSuccess` |
 | **Talking Trains Speechcraft** | Detected for display/toggle; Commoner's talking XP reacts to the engine `UiModeChanged` signal directly, so it works with or without this mod |
 | **Commercium / Fair Trade** | Commoner trade XP via `FairTrade_Transaction` |
+| **Evening Star (Religions of Morrowind)** | Each stance is sworn to one of the three Tribunal Temple deities (Vivec / Almalexia / Sotha Sil). While you worship that deity, the active stance gains a small additive bonus to its target skill, scaled by devotion tier (Follower **+2**, Devotee **+4**). Detected by reading the worship abilities Evening Star grants you — no API needed. Tribunal Temple only; the Sun's Dusk pantheons are ignored. Toggle under **Integrations** |
 | **Toxicology!** | Read-only sibling — Stance! never writes to Toxicology's data |
+
+### Evening Star — Tribunal patronage
+
+When **Evening Star: Religions of Morrowind** is installed and the integration is
+enabled, every stance is associated with one of the three living gods of the
+Tribunal Temple, grouped by domain:
+
+- **Vivec**, the Warrior-Poet (patron of artists and rogues): the blade stances
+  (Soloist, Zweihänder, Blademeister, Dualist), the Thief, the Twirler, the
+  Axeman, and the Muse.
+- **Almalexia**, the Mother and defender (provision and endurance): the Brawler,
+  Guisarmier, Mjölnir, the providers (Angler, Forager, Huntsman), and the Commoner.
+- **Sotha Sil**, the Clockwork God and master artificer (magic and reason): the
+  casters (Arcanist, Thaumaturge), the crafters (Reforger, Apothecary), the miner
+  (Pitmen), and the Locksmith.
+
+Your devotion tier — read from the abilities Evening Star grants you (Worshipper /
+Follower → **Follower**; Devotee → **Devotee**) — sets the size of the blessing,
+a small additive bonus to the active stance's own target skill. It is deliberately
+small (a fraction of the core effectiveness bonus's +2→+20) so it complements your
+faith without unbalancing the stance system. The stance's patron and current
+blessing are shown in its skill tooltip.
 
 ## Requirements
 
@@ -89,7 +114,24 @@ own events live in the `Stance_*` namespace.
 3. Make sure Skill Framework loads before Stance.
 4. Open **Options → Scripts → Stance!** to configure.
 
+## Stance Wheel (included)
+
+The radial **Stance Wheel** selector ships inside this mod — there is no separate
+download or content file to enable. Its scripts live under `scripts/StanceWheel/`
+and are registered by the same `Stance.omwscripts`, so it is active the moment
+Stance! is. Configure it on its own **Stance — Wheel** settings page (Options →
+Scripts).
+
+Hold the activation key (default **G**), aim a stance with the mouse or right
+stick, and release: the wheel reads your **Quick Select Ultimate** hotbar, equips
+the weapon that matches the aimed stance, and lets Stance!'s resolver flip you
+into it. **Quick Select Ultimate is still required** for the wheel to do anything
+— the wheel is the glue between the two. If Quick Select Ultimate is absent, the
+wheel quietly stays dormant (the rest of Stance! is unaffected); it tells you once
+when you first press the key.
+
 ## The stances
+
 
 The mod resolves the active stance every frame by walking a priority-ordered
 list of detection rules. **The first rule whose signal fires wins.** There are
@@ -188,6 +230,48 @@ labels, and per-stance weights are all data in `config.solAffinity`. Each
 integration has its own toggle under **Integrations**, and the whole thing is
 read-only — neither Sol mod is ever written to, and the bonus is simply absent
 when its mod is not installed.
+
+### Brawler + Iron Fist for OpenMW
+
+**Iron Fist for OpenMW** adds an unarmed
+damage bonus from equipped gauntlets, bracers, or gloves, scaled by their
+armor weight class, your Strength and Hand-to-Hand skill, and the swing
+itself — plus optional durability wear and casting the glove's own
+enchantment on a hit. When it's installed and enabled, Brawler builds
+directly on top of it:
+
+- While Brawler is active and you have a gauntlet or bracer equipped, Brawler
+  adds its **own** extra unarmed damage on top of whatever Iron Fist itself
+  just dealt. The two bonuses are independent and simply add together — Iron
+  Fist's own mechanic is never read, modified, or duplicated.
+- The hand-armor tier (**Light / Medium / Heavy**) is the *exact same*
+  classification Brawler's existing Hand-to-Hand bonus already uses (the
+  vanilla GMST-based weight thresholds, `iGauntletWeight` / `fLightMaxMod` /
+  `fMedMaxMod`) — "Heavy" means the identical thing to both systems, and each
+  tier has its own bonus ceiling (`config.brawlerGauntlet`'s
+  `ironfistBonusMax`).
+- That ceiling is reached gradually as Brawler levels up, on the same stepped
+  ramp `config.leveling`'s effectiveness bonus already uses elsewhere — 0
+  just past the start level, full strength once the ramp caps (level 50 by
+  default).
+- **Iron Grip** (level 25+) applies its description's literal **+15%
+  hand-to-hand damage** to this term specifically — the first time that perk
+  has ever had a direct damage effect; everywhere else it still works the way
+  it always has, as a Strength bonus.
+- Already wearing **bare fists**? Both Iron Fist's own bonus and this one are
+  zero — there's nothing to amplify without a glove on. Already correctly
+  credited as ordinary unarmed combat: Brawler's standard combat-hit XP flows
+  on every landed punch regardless of any of this, exactly as it always has.
+- Does not touch, gate on, or interact with the **Gothic Style Knockout**
+  integration in any way — that integration's events
+  (`Stance_BrawlerKnockdown` / `GKD_DoKnockdown`) are completely separate and
+  unaffected.
+
+Entirely inert without Iron Fist installed (detected via its own settings
+mirror, `IronFistRuntime`) and turned off the moment its own "enabled"
+setting is off — there is no separate "fake" version of this bonus without
+the real mod present. Toggle is **Iron Fist for OpenMW** under
+**Integrations**.
 
 ### Move Like This — weapon distinctiveness
 
@@ -347,7 +431,8 @@ perk catalog** so the two systems compound naturally — Twirler amplifies
 Throwing!'s Critical / Twin Flight / Bleed / Paralyze; Thaumaturge amplifies
 Staves!'s Concussive Strike / Arcane Siphon / Resonant Conduit / Null Pulse;
 Huntsman rides on Bullseye's headshots; Brawler ties to Gothic Style Knockout's
-confirmed knockout; Arcanist layers on Incantation's magicka refund and
+confirmed knockout and gives its Iron Grip perk a literal damage effect when
+Iron Fist for OpenMW is installed; Arcanist layers on Incantation's magicka refund and
 Meditation's regen; Pitmen (Vein Reader / Prospector / Pit Boss) and Angler
 (Catch and Release / Trophy Cast / Master Angler) build on Simply Mining and
 Fishing; Apothecary builds on thrown-alchemy hits; Reforger's perks are

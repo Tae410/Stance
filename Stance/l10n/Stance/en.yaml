@@ -1,5 +1,13 @@
-PageName: Stance!
-PageDescription: Dynamic stance system. The displayed skill name, governing attribute, description, and perks all change based on the weapon style you currently have active. Inspired by For Honor's stance system and built to interlope with Toxicology, Throwing, Staves, Bullseye, N'Garde, Dual Wielding, GRIP, Gothic Style Knockout, Incantation, Meditation, Weapon Upgrade, and Armor Upgrade.
+PageName: Stance
+PageDescription: Dynamic stance system. The displayed skill name, governing attribute, description, and perks all change based on the weapon style you currently have active. Inspired by For Honor's stance system and built to interlope with Toxicology, Throwing, Staves, Bullseye, N'Garde, Dual Wielding, GRIP, Gothic Style Knockout, Incantation, Meditation, Weapon Upgrade, and Armor Upgrade. This main page holds the master toggles and the per-stance on/off switches; the other Stance pages hold Perks & XP, Integrations, Interface, and Debug.
+PagePerksXpName: Stance — Perks & XP
+PagePerksXpDescription: Perk toggles (master plus one per stance) and everything about how you gain Stance levels — race and class bonuses, every XP source, and the global XP multiplier.
+PageIntegrationsName: Stance — Integrations
+PageIntegrationsDescription: Toggles for every external-mod hookup Stance! supports — magic, combat, weapon-style, crafting, religion, and sibling mods. Each is detected automatically; turning one off disables only that integration.
+PageInterfaceName: Stance — Interface
+PageInterfaceDescription: Everything on-screen — the HUD stance indicator (show, lock, size, position, Muse readout), what appears inside the dynamic skill tooltip, and the perk-unlocked notification style.
+PageDebugName: Stance — Debug
+PageDebugDescription: Categorised logging for troubleshooting. The master toggle gates all categories; enabling a single category does nothing until the master is also on.
 
 GroupGeneralName: General
 GroupGeneralDescription: Master on/off switches for the whole mod. Most users only need to touch the first toggle.
@@ -142,12 +150,16 @@ SettingIntegrateIncantation: Incantation
 SettingIntegrateIncantationDescription: Credit Arcanist XP on Incantation skill gains via the Skill Progression hook.
 SettingIntegrateMeditation: Meditation Skill
 SettingIntegrateMeditationDescription: Credit Arcanist XP on Meditation Skill ticks via the Skill Progression hook.
+SettingIntegrateOSSC: Oblivion-Style Spell Casting (OSSC)
+SettingIntegrateOSSCDescription: Credit the spellcasting stance (Arcanist by default) whenever you cast via OSSC's quick-cast hotkey. OSSC casts use their own animations, so they would otherwise earn no Stance XP; this feeds the caster stance directly, regardless of your active stance, so a weapon-and-spell hybrid still trains it. Still respects the global "XP on spell cast" toggle. No setup needed — detected automatically when OSSC is installed.
 SettingIntegrateNGarde: N'Garde
 SettingIntegrateNGardeDescription: Use N'Garde parry-success events to credit parry XP to the active stance.
 SettingIntegrateDualWielding: Dual Wielding
 SettingIntegrateDualWieldingDescription: Use Dual Wielding's EquipSecondWeapon / RemoveSecondWeapon events to track when an off-hand weapon is mounted. Without this, Dualist never activates.
 SettingIntegrateGothicKnockout: Gothic Style Knockout
 SettingIntegrateGothicKnockoutDescription: Listen for Gothic Style Knockout's GKD_DoKnockdown event to credit Brawler XP on confirmed knockouts and to gate the Brawler Concussive Jab perk.
+SettingIntegrateIronfist: Iron Fist for OpenMW
+SettingIntegrateIronfistDescription: While Brawler is active and you have a gauntlet or bracer equipped, add Brawler's own extra unarmed damage on top of Iron Fist's gauntlet bonus, scaled by your Brawler stance level and (at level 25+) the Iron Grip perk. Uses the same Light/Medium/Heavy hand-armor tiers as Brawler's existing Hand-to-Hand bonus. Has no effect unless Iron Fist for OpenMW is installed and its own "enabled" setting is on.
 SettingIntegrateThrowing: Throwing!
 SettingIntegrateThrowingDescription: Use Throwing!'s skill level and perks as the catalyst for the Twirler stance. Twirler boosts the Throwing skill directly; its perks (Edged Spin, Twinned Throw, Rending Hand, Whirlwind Arm) are applied through Throwing! via the Stance_TwirlerBonuses event.
 SettingIntegrateStaves: Staves!
@@ -182,9 +194,15 @@ SettingIntegrateEvasionDescription: "Detect Evasion! via its settings section (S
 GroupHUDName: HUD Indicator
 GroupHUDDescription: The on-screen indicator showing the currently active stance — its icon, with the stance name (and any active prefix) beneath it. Click and drag it to any position while an inventory-like menu (Inventory, Map, Magic, Stats, Container, Barter) is open; the position auto-saves. Lock the position to disable drag without hiding the indicator.
 SettingShowHudIndicator: Show HUD Indicator
+SettingEnableStanceCodex: Stance Codex
+SettingEnableStanceCodexDescription: Enable the hotkey-toggled Stance Codex overlay, listing every stance's level, perk-tier progress, and governing attribute, with the active one highlighted.
+SettingCodexHotkey: Stance Codex Hotkey
+SettingCodexHotkeyDescription: Key that opens/closes the Stance Codex overlay.
 SettingShowHudIndicatorDescription: Display the active stance's icon on screen, with the stance name beneath it (the name can be hidden separately below for an icon-only indicator).
 SettingHudShowStanceName: Show Stance Name
 SettingHudShowStanceNameDescription: Show the active stance name (with any active prefix such as a Spellsword imbue, Fortified, or Sneaky decoration) beneath the icon. Turn off for an icon-only indicator. If a stance has no icon, the name is shown regardless so the indicator is never blank.
+SettingHudShowMusePerformance: Show Muse Performance
+SettingHudShowMusePerformanceDescription: While the Muse stance is performing a song idly, show a live one-line readout beneath the indicator — the song, the stance it is inspiring, note progress, and the inspiration time banked so far. Turn off to keep the indicator compact (the same information stays on the Muse skill tooltip regardless).
 SettingHudIndicatorLockPosition: Lock HUD Position
 SettingHudIndicatorLockPositionDescription: Prevent click-and-drag repositioning of the HUD indicator. The X and Y settings below remain authoritative when locked.
 SettingHudIndicatorIconSize: HUD Indicator Size
@@ -272,6 +290,8 @@ SettingXpOnTrapHit: XP from Trap Catches
 SettingXpOnTrapHitDescription: Grant Thief XP whenever an enemy is caught by one of your armed traps (from the Traps mod). Worth 3 XP before the global multiplier, credited to the Thief stance no matter what you are wielding. Requires the Traps integration to be enabled.
 SettingXpOnOilBurn: XP from Oil Fires
 SettingXpOnOilBurnDescription: Grant Apothecary XP while an enemy stands in one of your burning oil pools (from the Oil Flask mod). A small amount is credited about once per second for as long as the enemy keeps burning, to the Apothecary stance no matter what you are wielding. Requires the Oil Flask integration to be enabled.
+SettingXpOnTrain: XP from Stance Trainers
+SettingXpOnTrainDescription: Allow training your active stance via the native "Train Stance" dialogue topic, added by the optional StanceTrainers.omwaddon content plugin. A trainer NPC can teach your active stance up to their own level in that stance's governing weapon skill, for a gold cost — exactly like vanilla skill training. Has no effect unless StanceTrainers.omwaddon is enabled in your content list.
 SettingXpOnMltCritical: XP from Move Like This Criticals
 SettingXpOnMltCriticalDescription: Grant the active stance a little extra XP whenever you land a Move Like This critical thrust (Long Blade, Short Blade, or Hand-to-Hand). Credited to whichever stance is active, which is necessarily the matching weapon stance. Requires the Move Like This integration to be enabled.
 SettingXpOnMltMobility: XP from Move Like This Mobility Slashes
@@ -282,6 +302,8 @@ SettingIntegrateCommerciumDescription: Detect the Commercium / Fair Trade mod vi
 
 SettingIntegrateTranscribe: Transcribe
 SettingIntegrateTranscribeDescription: Detect the Transcribe mod via its settings group. When present, the Arcanist and Thaumaturge stances earn XP on each successful spell transcription via the mod's TRAN_doTranscribe event (relayed to the player through Stance's global script).
+SettingIntegrateEveningStar: Evening Star (Religions of Morrowind)
+SettingIntegrateEveningStarDescription: Associate each stance with one of the three Tribunal Temple deities (Vivec, Almalexia, Sotha Sil) and grant a small bonus to the active stance's target skill while you worship its patron, scaled by devotion tier (Follower +2, Devotee +4). Detection reads the worship abilities Evening Star grants you, so no extra setup is needed. Covers only the Tribunal Temple; the bonus is small and additive so it never eclipses the core stance balance.
 
 SettingIntegrateThrownConcoctions: Thrown Concoctions
 SettingIntegrateThrownConcoctionsDescription: Detect the Thrown Concoctions mod via the presence of its concoction weapon records. When present, equipping one of its thrown concoctions activates the Apothecary stance, which earns XP and triggers its on-hit effects when a concoction strikes an enemy. Turn this off to treat concoctions as ordinary thrown weapons (the Twirler stance) instead.
